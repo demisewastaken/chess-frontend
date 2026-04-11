@@ -3,7 +3,7 @@ let myColor = "SPECTATOR";
 const isLocal = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
 
 // We will paste your actual cloud URL here once we deploy the backend in Phase 3!
-const PROD_BACKEND_URL = "https://your-future-app-name.onrender.com"; 
+const PROD_BACKEND_URL = "https://dichess.onrender.com"; 
 
 const SERVER_URL = isLocal ? "http://localhost:8080" : PROD_BACKEND_URL;
 

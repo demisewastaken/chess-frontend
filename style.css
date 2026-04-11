@@ -1,0 +1,242 @@
+/* --- Core Styling --- */
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    margin: 0;
+    background-color: #2c3e50;
+    color: white;
+}
+
+.main-container { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+
+/* Layout adjustments */
+.game-layout {
+    display: flex;
+    flex-wrap: wrap; 
+    gap: 40px; 
+    align-items: flex-start;
+    justify-content: center;
+}
+.left-column { display: flex; flex-direction: column; }
+
+/* --- Coordinate Styling --- */
+.board-with-coords { display: flex; align-items: center; }
+.coords-y {
+    display: grid; grid-template-rows: repeat(8, 80px); align-items: center;
+    padding-right: 15px; font-weight: bold; color: #bdc3c7; font-size: 18px;
+}
+.coords-x {
+    display: grid; grid-template-columns: repeat(8, 80px); text-align: center;
+    margin-left: 25px; padding-top: 5px; font-weight: bold; color: #bdc3c7; font-size: 18px;
+}
+
+/* --- The Board & Squares --- */
+#board-area { position: relative; }
+#chessboard {
+    display: grid; grid-template-columns: repeat(8, 80px); grid-template-rows: repeat(8, 80px);
+    border: 5px solid #1a252f; box-shadow: 0px 15px 30px rgba(0,0,0,0.6);
+}
+.square {
+    width: 80px; height: 80px; display: flex; justify-content: center; position: relative;
+    align-items: center; user-select: none; transition: background-color 0.2s; 
+}
+.light { background-color: #f0d9b5; }
+.dark { background-color: #b58863; }
+
+/* Visual Feedback Classes */
+.drag-over { background-color: #f1c40f !important; box-shadow: inset 0 0 15px rgba(0,0,0,0.5); }
+.dragging { opacity: 0.5; }
+.selected { background-color: #7fa650 !important; } 
+.invalid-move { background-color: rgba(255, 0, 0, 0.5) !important; }
+
+.check-square {
+    background-color: rgba(255, 0, 0, 0.8) !important;
+    animation: checkPulse 1.5s infinite;
+}
+@keyframes checkPulse {
+    0% { background-color: rgba(255, 0, 0, 0.8); }
+    50% { background-color: rgba(255, 0, 0, 0.3); }
+    100% { background-color: rgba(255, 0, 0, 0.8); }
+}
+
+/* Valid Move Hint Dots */
+.valid-move-hint {
+    position: absolute; width: 25px; height: 25px;
+    background-color: rgba(0, 0, 0, 0.2); border-radius: 50%; pointer-events: none;
+}
+
+/* --- Pieces --- */
+.piece-symbol {
+    font-size: 68px; cursor: grab; z-index: 2; /* Keep pieces above hints */
+    text-shadow: 1px 1px 2px rgba(0,0,0,0.2), -1px -1px 2px rgba(255,255,255,0.1);
+}
+.piece-symbol:active { cursor: grabbing; }
+.white-piece { color: #ffffff; text-shadow: 0 0 1px black, 0 0 1px black, 0 0 1px black, 0 0 1px black; }
+.black-piece { color: #000000; }
+
+/* --- Sidebar --- */
+#sidebar {
+    width: 250px; height: 650px; background-color: #1a252f; border-radius: 8px;
+    padding: 15px; box-shadow: 0px 10px 20px rgba(0,0,0,0.5); display: flex; flex-direction: column;
+}
+#sidebar h3 { margin-top: 0; text-align: center; border-bottom: 2px solid #34495e; padding-bottom: 10px; }
+#move-log {
+    flex-grow: 1; overflow-y: auto; display: flex; flex-direction: column;
+    gap: 8px; font-family: monospace; font-size: 16px;
+}
+.log-entry { background-color: #2c3e50; padding: 8px; border-radius: 4px; border-left: 4px solid #7fa650; }
+
+/* Control Panel */
+.controls { text-align: center; display: flex; flex-direction: column; gap: 10px; }
+button { padding: 10px 20px; font-size: 16px; cursor: pointer; background-color: #34495e; color: white; border: 2px solid #1a252f; border-radius: 5px; transition: background-color 0.2s; }
+button:hover { background-color: #4e6d8c; }
+
+
+/* ======================================================== */
+/* FIXED MODALS & OVERLAYS (No more layout bugs!)          */
+/* ======================================================== */
+
+#overlay, #promotion-modal {
+    position: fixed; /* Fixes it to the browser window, ignoring all flexbox rules */
+    top: 0; left: 0; width: 100vw; height: 100vh;
+    background-color: rgba(0, 0, 0, 0.7); backdrop-filter: blur(4px);
+    display: flex; flex-direction: column; justify-content: center; align-items: center; 
+    z-index: 1000; /* Forces it to sit above everything else */
+    transition: opacity 0.3s;
+}
+
+#overlay-message { font-size: 60px; font-weight: bold; margin-bottom: 20px; color: #f1c40f; text-align: center;}
+.hidden { opacity: 0; pointer-events: none; }
+
+.promotion-box {
+    background-color: #ecf0f1; border-radius: 10px; padding: 20px;
+    box-shadow: 0 15px 30px rgba(0,0,0,0.5); text-align: center; color: #2c3e50;
+}
+.promotion-box h3 { margin-top: 0; margin-bottom: 20px; font-size: 24px; }
+.promotion-options { display: flex; gap: 15px; }
+.promo-choice {
+    width: 70px; height: 70px; display: flex; justify-content: center; align-items: center;
+    font-size: 50px; background-color: #bdc3c7; border-radius: 8px; cursor: pointer;
+    transition: background-color 0.2s, transform 0.1s;
+}
+.promo-choice:hover { background-color: #f1c40f; transform: scale(1.1); }
+
+/* --- NEW: Timeline Controls & Review Mode --- */
+.history-controls {
+    display: flex;
+    justify-content: center;
+    gap: 5px;
+    margin-top: 10px;
+    border-top: 2px solid #34495e;
+    padding-top: 10px;
+}
+
+.history-controls button {
+    padding: 8px 15px;
+    font-size: 14px;
+    font-weight: bold;
+    background-color: #2c3e50;
+}
+
+.history-controls button:hover { background-color: #f1c40f; color: #2c3e50; }
+
+/* The visual warning that you are looking at the past! */
+.review-mode {
+    border-color: #e67e22 !important; 
+    box-shadow: 0px 15px 30px rgba(230, 126, 34, 0.5) !important;
+}
+
+/* Make pieces un-clickable when in the past */
+.review-mode .square, .review-mode .piece-symbol {
+    cursor: not-allowed !important;
+}
+
+/* --- NEW: Player Profiles & Material Advantage --- */
+.player-info {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    margin-left: 35px; /* Aligns perfectly with the a-h grid */
+    margin-top: 5px;
+    margin-bottom: 5px;
+    height: 30px;
+}
+
+.player-name {
+    font-size: 18px;
+    font-weight: bold;
+    color: #ecf0f1;
+}
+
+.captured-area {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    font-size: 24px; /* Much smaller than board pieces */
+    background-color: rgba(0, 0, 0, 0.2);
+    padding: 2px 8px;
+    border-radius: 5px;
+    min-height: 28px;
+}
+
+/* Ensure captured icons keep their colors */
+.captured-white { color: #ffffff; text-shadow: 0 0 1px black, 0 0 1px black; }
+.captured-black { color: #000000; }
+
+.advantage-score {
+    font-size: 14px;
+    font-weight: bold;
+    margin-left: 8px;
+    color: #7fa650; /* Green highlight for the winning player */
+    font-family: monospace;
+}
+
+/* --- NEW: Digital Clock --- */
+.clock {
+    background-color: #1a252f;
+    padding: 5px 12px;
+    border-radius: 4px;
+    font-family: monospace;
+    font-size: 20px;
+    font-weight: bold;
+    color: #ecf0f1;
+    border: 2px solid #34495e;
+    min-width: 60px;
+    text-align: center;
+}
+
+/* We will trigger this class via JS when time runs low! */
+.time-low {
+    color: #e74c3c;
+    border-color: #e74c3c;
+    animation: pulseTime 1s infinite;
+}
+
+@keyframes pulseTime {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.05); }
+    100% { transform: scale(1); }
+}
+
+/* ==========================================
+   NEW: BOARD FLIPPING MAGIC 
+   ========================================== */
+
+/* Rotate the entire left column (Board, Timers, and Coordinates) by 180 degrees */
+.flipped-board {
+    transform: rotate(180deg);
+}
+
+/* Counter-rotate all the text and images so they don't look upside down! */
+.flipped-board .piece-symbol,
+.flipped-board .coords-y span,
+.flipped-board .coords-x span,
+.flipped-board .player-name,
+.flipped-board .clock,
+.flipped-board .advantage-score,
+.flipped-board .captured-area span {
+    transform: rotate(180deg);
+}

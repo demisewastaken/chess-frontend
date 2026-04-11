@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chess</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="main-container">
+        <h1>DiChess</h1>
+        
+        <div class="game-layout">
+            <div class="left-column">
+                
+                <div class="player-info">
+                    <span class="player-name">Black</span>
+                    <div class="clock" id="black-clock">10:00</div>
+                    <div class="captured-area" id="captured-by-black"></div>
+                </div>
+
+                <div class="board-with-coords">
+                    <div class="coords-y">
+                        <span>8</span><span>7</span><span>6</span><span>5</span><span>4</span><span>3</span><span>2</span><span>1</span>
+                    </div>
+                    
+                    <div id="board-area">
+                        <div id="chessboard"></div>
+                    </div>
+                </div>
+                
+                <div class="coords-x">
+                    <span>a</span><span>b</span><span>c</span><span>d</span><span>e</span><span>f</span><span>g</span><span>h</span>
+                </div>
+
+                <div class="player-info">
+                    <span class="player-name">White</span>
+                    <div class="clock" id="white-clock">10:00</div>
+                    <div class="captured-area" id="captured-by-white"></div>
+                </div>
+
+            </div>
+
+            <div id="sidebar">
+                <h3>Match History</h3>
+                <div id="move-log"></div>
+                
+                <div class="history-controls">
+                    <button onclick="viewFirst()" title="First Move">|&lt;</button>
+                    <button onclick="viewPrevious()" title="Previous Move">&lt;</button>
+                    <button onclick="viewNext()" title="Next Move">&gt;</button>
+                    <button onclick="viewLive()" title="Live Game">&gt;|</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="controls">
+            <h3 id="status">White's Turn</h3>
+            <button onclick="resetGame()">Reset Game</button>
+        </div>
+    </div>
+
+    <div id="promotion-modal" class="hidden">
+        <div class="promotion-box">
+            <h3>Promote Pawn</h3>
+            <div id="promotion-options" class="promotion-options"></div>
+        </div>
+    </div>
+
+    <div id="overlay" class="hidden">
+        <div id="overlay-message"></div>
+        <button onclick="resetGame()">Play Again</button>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/sockjs-client/1.6.1/sockjs.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/stomp.js/2.3.3/stomp.min.js"></script>
+
+    <script src="app.js"></script>
+</body>
+</html>

@@ -105,6 +105,10 @@ function connectWebSocket() {
                 startOfficialMatch(); 
             } else if (data.type === "MOVE") {
                 executeLiveMoveUpdate(data);
+            } else if (data.type === "KICK") {
+                // THE FIX: If someone clicks "Leave Table", refresh everyone's browser 
+                // so the spectators have a chance to steal the empty seats!
+                window.location.reload(); 
             }
         });
     });
@@ -204,7 +208,7 @@ function executeLiveMoveUpdate(data) {
     } else if (data.status.includes("CHECK")) {
         highlightKingInCheck(data.status, data.grid);
     } else if (data.status.includes("RESIGNATION")) {
-        const winner = data.status.includes("Black wins") ? "Black" : "White";
+        const winner = data.status.includes("BLACK wins") ? "Black" : "White";
         displayOverlay(`RESIGNATION<br>${winner} wins!`, true);
         matchStarted = false;
         clearInterval(timerInterval); 
@@ -281,6 +285,14 @@ async function attemptMove(startX, startY, endX, endY, pieceCode) {
 
 async function resetGame() {
     await fetch(`${SERVER_URL}/reset`);
+}
+
+async function leaveTable() {
+    // 1. Delete the local token from the player's browser
+    localStorage.removeItem("chessToken"); 
+    
+    // 2. Tell Java to wipe the seats and kick everyone
+    await fetch(`${SERVER_URL}/leave`); 
 }
 
 // ==========================================
@@ -449,6 +461,17 @@ function updateMaterial(grid) {
 function renderCapturedPieces(containerId, pieces, advantage) {
     const container = document.getElementById(containerId);
     container.innerHTML = ""; 
+    
+    // ==========================================
+    // THE FIX: Hide the box if it is completely empty!
+    // ==========================================
+    if (pieces.length === 0 && !advantage) {
+        container.style.display = "none";
+        return; // Stop the function here, we don't need to do anything else!
+    } else {
+        container.style.display = "flex"; // Bring the box back!
+    }
+
     const sortOrder = { 'Q': 1, 'R': 2, 'B': 3, 'N': 4, 'P': 5 };
     pieces.sort((a, b) => sortOrder[a[1]] - sortOrder[b[1]]);
 
@@ -537,17 +560,24 @@ function highlightKingInCheck(text, grid) {
 }
 
 // We can now tell the overlay whether or not to generate a Play Again button!
+// We can now tell the overlay whether or not to generate the post-game buttons!
 function displayOverlay(message, showReset = false) { 
     let finalHtml = message;
     
-    // Only show the reset button if requested AND if they are an actual player!
+    // Only show the buttons if requested AND if they are an actual player!
     if (showReset && myColor !== "SPECTATOR") {
-        finalHtml += `<br><br><button onclick="resetGame()" style="padding:10px 20px; font-size:18px; cursor:pointer; background-color:#34495e; color:white; border:none; border-radius:5px;">Play Again</button>`;
+        finalHtml += `
+        <br><br>
+        <div style="display: flex; gap: 15px; justify-content: center;">
+            <button onclick="resetGame()" style="padding:10px 20px; font-size:18px; cursor:pointer; background-color:#34495e; color:white; border:none; border-radius:5px;">Rematch</button>
+            <button onclick="leaveTable()" style="padding:10px 20px; font-size:18px; cursor:pointer; background-color:#c0392b; color:white; border:none; border-radius:5px;">Leave Table</button>
+        </div>`;
     }
     
     document.getElementById("overlay-message").innerHTML = finalHtml; 
     document.getElementById("overlay").classList.remove("hidden"); 
 }
+
 function hideOverlay() { document.getElementById("overlay").classList.add("hidden"); }
 
 // ==========================================

@@ -54,34 +54,44 @@ function updateStatusUI(text) {
 // 2. INITIALIZATION & LOBBY SYSTEM
 // ==========================================
 async function joinGame() {
-    // 1. Check if we have a secret token saved in the browser's local memory
-    let savedToken = localStorage.getItem("chessToken") || "";
-    
-    // 2. Send the token (if we have one) to Java
-    const response = await fetch(`${SERVER_URL}/join?token=${savedToken}`);
-    const tokenResponse = await response.text(); 
-    
-    // 3. Figure out who we are based on Java's response
-    if (tokenResponse.startsWith("WHITE")) {
-        myColor = "WHITE";
-        localStorage.setItem("chessToken", tokenResponse); // Save the token securely!
-    } else if (tokenResponse.startsWith("BLACK")) {
-        myColor = "BLACK";
-        localStorage.setItem("chessToken", tokenResponse); // Save the token securely!
-    } else {
-        myColor = "SPECTATOR";
-    }
+    try {
+        // 1. Wait for Java to wake up and assign us a seat
+        let savedToken = localStorage.getItem("chessToken") || "";
+        const response = await fetch(`${SERVER_URL}/join?token=${savedToken}`);
+        const tokenResponse = await response.text(); 
+        
+        // ==========================================
+        // THE FIX: Java is awake! Kill the loading screen!
+        // ==========================================
+        document.getElementById("loading-screen").classList.add("fade-out");
 
-    const leftColumn = document.querySelector(".left-column");
-    if (myColor === "BLACK") leftColumn.classList.add("flipped-board");
+        // 2. Figure out who we are based on Java's response
+        if (tokenResponse.startsWith("WHITE")) {
+            myColor = "WHITE";
+            localStorage.setItem("chessToken", tokenResponse);
+        } else if (tokenResponse.startsWith("BLACK")) {
+            myColor = "BLACK";
+            localStorage.setItem("chessToken", tokenResponse);
+        } else {
+            myColor = "SPECTATOR";
+        }
 
-    if (myColor !== "SPECTATOR") {
-        updateStatusUI(`You are playing as: ${myColor}`);
-        displayOverlay(`<h2>Welcome, ${myColor}</h2><br><button onclick="declareReady()" style="padding:10px 20px; font-size:18px; cursor:pointer;">I am Ready</button>`);
-    } else {
-        updateStatusUI("Spectating Live Match...");
-        displayOverlay(`<h2>👁️ Spectating Mode</h2><p style="font-size: 24px; color: white;">You are watching a live match.</p>`);
-        setTimeout(() => hideOverlay(), 3000);
+        const leftColumn = document.querySelector(".left-column");
+        if (myColor === "BLACK") leftColumn.classList.add("flipped-board");
+
+        if (myColor !== "SPECTATOR") {
+            updateStatusUI(`You are playing as: ${myColor}`);
+            displayOverlay(`<h2>Welcome, ${myColor}</h2><br><button onclick="declareReady()" style="padding:10px 20px; font-size:18px; cursor:pointer;">I am Ready</button>`);
+        } else {
+            updateStatusUI("Spectating Live Match...");
+            displayOverlay(`<h2>👁️ Spectating Mode</h2><p style="font-size: 24px; color: white;">You are watching a live match.</p>`);
+            setTimeout(() => hideOverlay(), 3000);
+        }
+    } catch (error) {
+        // If the server is completely broken, tell the user!
+        document.getElementById("loading-text").innerText = "Error: Server is currently offline.";
+        document.getElementById("loading-text").style.color = "#e74c3c";
+        document.querySelector(".bouncing-pawn").style.animation = "none";
     }
 }
 

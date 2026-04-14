@@ -12,6 +12,48 @@ body {
     color: white;
 }
 
+/* ==========================================
+   NEW: LOADING SCREEN
+   ========================================== */
+#loading-screen {
+    position: fixed;
+    top: 0; left: 0; width: 100vw; height: 100vh;
+    background-color: #2c3e50;
+    display: flex; flex-direction: column;
+    justify-content: center; align-items: center;
+    z-index: 9999; /* Forces it above absolutely everything else */
+    transition: opacity 0.5s ease-out, visibility 0.5s ease-out;
+}
+
+.bouncing-pawn {
+    font-size: 100px;
+    animation: bounce 0.8s infinite alternate cubic-bezier(0.2, 0.8, 0.2, 1);
+    text-shadow: 0 15px 25px rgba(0,0,0,0.5);
+    margin-bottom: 20px;
+}
+
+#loading-text {
+    color: #f1c40f;
+    animation: pulseText 1.5s infinite;
+}
+
+@keyframes bounce {
+    0% { transform: translateY(0) scaleY(0.9); }
+    100% { transform: translateY(-40px) scaleY(1.05); }
+}
+
+@keyframes pulseText {
+    0% { opacity: 0.6; }
+    50% { opacity: 1; }
+    100% { opacity: 0.6; }
+}
+
+/* We will trigger this class from JavaScript to fade it out */
+.fade-out {
+    opacity: 0;
+    visibility: hidden;
+}
+
 .main-container { display: flex; flex-direction: column; align-items: center; gap: 10px; }
 
 .game-layout {

@@ -3,10 +3,19 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Chess</title>
+    <title>Multiplayer Chess</title>
+    
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>♟️</text></svg>">
+    
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
+    <div id="loading-screen">
+        <div class="bouncing-pawn">♟️</div>
+        <h2 id="loading-text">Waking up the Chess Server...</h2>
+        <p style="color: #bdc3c7;">This might take up to 45 seconds on the first load.</p>
+    </div>
+    
     <div class="main-container">
         <h1>DiChess</h1>
         

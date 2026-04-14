@@ -28,7 +28,7 @@
                         <div id="chessboard"></div>
                     </div>
                 </div>
-                
+
                 <div class="coords-x">
                     <span>a</span><span>b</span><span>c</span><span>d</span><span>e</span><span>f</span><span>g</span><span>h</span>
                 </div>
@@ -45,6 +45,11 @@
                 <h3>Match History</h3>
                 <div id="move-log"></div>
                 
+                <div id="match-controls" class="hidden">
+                    <button id="btn-abort" onclick="sendAction('ABORT')">Abort Game</button>
+                    <button id="btn-resign" onclick="sendAction('RESIGN')">Resign</button>
+                </div>
+                
                 <div class="history-controls">
                     <button onclick="viewFirst()" title="First Move">|&lt;</button>
                     <button onclick="viewPrevious()" title="Previous Move">&lt;</button>
@@ -56,7 +61,6 @@
 
         <div class="controls">
             <h3 id="status">White's Turn</h3>
-            <button onclick="resetGame()">Reset Game</button>
         </div>
     </div>
 
@@ -69,7 +73,6 @@
 
     <div id="overlay" class="hidden">
         <div id="overlay-message"></div>
-        <button onclick="resetGame()">Play Again</button>
     </div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/sockjs-client/1.6.1/sockjs.min.js"></script>

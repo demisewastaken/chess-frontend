@@ -122,8 +122,10 @@ body {
    3. PIECES
    ========================================== */
 .piece-symbol {
-    font-size: 68px; cursor: grab; z-index: 2; 
-    text-shadow: 1px 1px 2px rgba(0,0,0,0.2), -1px -1px 2px rgba(255,255,255,0.1);
+    font-size: 65px; cursor: grab; 
+    user-select: none;
+    /* z-index: 2; 
+    text-shadow: 1px 1px 2px rgba(0,0,0,0.2), -1px -1px 2px rgba(255,255,255,0.1); */
 }
 
 .piece-symbol:active { cursor: grabbing; }
@@ -266,3 +268,8 @@ button:hover { background-color: #4e6d8c; }
 .flipped-board .player-info {
     transform: rotate(180deg);
 }
+
+.last-move-highlight {
+    background-color: rgba(246, 246, 130, 0.45) !important; 
+}
+

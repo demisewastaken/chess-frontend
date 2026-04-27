@@ -5,7 +5,11 @@ const isLocal = window.location.hostname === "localhost" || window.location.host
 const PROD_BACKEND_URL = "https://dichess.onrender.com"; 
 const SERVER_URL = isLocal ? "http://localhost:8080" : PROD_BACKEND_URL;
 
-const pieceMap = { "wK": "♔", "wQ": "♕", "wR": "♖", "wB": "♗", "wN": "♘", "wP": "♙", "bK": "♚", "bQ": "♛", "bR": "♜", "bB": "♝", "bN": "♞", "bP": "♟", "": "" };
+const pieceMap = { 
+    "wK": "♚", "wQ": "♛", "wR": "♜", "wB": "♝", "wN": "♞", "wP": "♟", 
+    "bK": "♚", "bQ": "♛", "bR": "♜", "bB": "♝", "bN": "♞", "bP": "♟", 
+    "": "" 
+};
 const pieceValues = { 'Q': 9, 'R': 5, 'B': 3, 'N': 3, 'P': 1, 'K': 0 };
 const INITIAL_BOARD = [
     ["bR", "bN", "bB", "bQ", "bK", "bB", "bN", "bR"],
@@ -25,25 +29,24 @@ let boardHistory = [];
 let currentViewIndex = -1; 
 let lastKnownStatus = "White's Turn"; 
 
+// --- NEW: LAST MOVE TRACKER ---
+let lastPlayedMove = null; 
+
 // LOBBY & CLOCK VARIABLES
 let myColor = "SPECTATOR";
 let matchStarted = false; 
 let autoAbortTimer = null; 
 
-// --- REAL-TIME CLOCK VARIABLES ---
 let serverWhiteTimeMs = 600000; 
 let serverBlackTimeMs = 600000;
-let localTimerStartMs = Date.now(); // Tracks the exact millisecond the server last synced
+let localTimerStartMs = Date.now(); 
 let timerInterval = null;
 let stompClient = null;
 
-// --- Master Status Controller ---
 function updateStatusUI(text) {
     lastKnownStatus = text;
     const statusDiv = document.getElementById("status");
-    
     if (myColor === "SPECTATOR") {
-        // Intercept the text and add a permanent gold Spectator badge!
         statusDiv.innerHTML = `<span style="color: #f1c40f;">👁️ SPECTATING</span> | ${text}`;
     } else {
         statusDiv.innerText = text;
@@ -55,17 +58,14 @@ function updateStatusUI(text) {
 // ==========================================
 async function joinGame() {
     try {
-        // 1. Wait for Java to wake up and assign us a seat
         let savedToken = localStorage.getItem("chessToken") || "";
         const response = await fetch(`${SERVER_URL}/join?token=${savedToken}`);
         const tokenResponse = await response.text(); 
         
-        // ==========================================
-        // THE FIX: Java is awake! Kill the loading screen!
-        // ==========================================
-        document.getElementById("loading-screen").classList.add("fade-out");
+        // Hide loading screen when server wakes up
+        const loadingScreen = document.getElementById("loading-screen");
+        if (loadingScreen) loadingScreen.classList.add("fade-out");
 
-        // 2. Figure out who we are based on Java's response
         if (tokenResponse.startsWith("WHITE")) {
             myColor = "WHITE";
             localStorage.setItem("chessToken", tokenResponse);
@@ -88,10 +88,12 @@ async function joinGame() {
             setTimeout(() => hideOverlay(), 3000);
         }
     } catch (error) {
-        // If the server is completely broken, tell the user!
-        document.getElementById("loading-text").innerText = "Error: Server is currently offline.";
-        document.getElementById("loading-text").style.color = "#e74c3c";
-        document.querySelector(".bouncing-pawn").style.animation = "none";
+        const loadingText = document.getElementById("loading-text");
+        if (loadingText) {
+            loadingText.innerText = "Error: Server is currently offline.";
+            loadingText.style.color = "#e74c3c";
+            document.querySelector(".bouncing-pawn").style.animation = "none";
+        }
     }
 }
 
@@ -105,7 +107,15 @@ function connectWebSocket() {
     stompClient = Stomp.over(socket);
     stompClient.debug = null; 
 
+    // ==========================================
+    // THE FIX: HEARTBEATS (Keeps Render Awake!)
+    // ==========================================
+    stompClient.heartbeat.outgoing = 20000; // Client pings server every 20 seconds
+    stompClient.heartbeat.incoming = 20000; // Server pings client every 20 seconds
+
+    // We add an error function at the end to catch disconnects
     stompClient.connect({}, function (frame) {
+        
         stompClient.subscribe('/topic/game', function (message) {
             const data = JSON.parse(message.body);
             
@@ -116,11 +126,24 @@ function connectWebSocket() {
             } else if (data.type === "MOVE") {
                 executeLiveMoveUpdate(data);
             } else if (data.type === "KICK") {
-                // THE FIX: If someone clicks "Leave Table", refresh everyone's browser 
-                // so the spectators have a chance to steal the empty seats!
                 window.location.reload(); 
             }
         });
+        
+    }, function (error) {
+        // ==========================================
+        // THE FIX: AUTO-RECONNECT FAILSAFE
+        // ==========================================
+        console.log("Connection lost! Attempting to reconnect...");
+        
+        // Show a temporary warning to the user
+        document.getElementById("status").innerText = "⚠️ Reconnecting to server...";
+        
+        // Wait 3 seconds, then try to reconnect and fetch the latest board
+        setTimeout(() => {
+            connectWebSocket();
+            fetchBoard(); 
+        }, 3000);
     });
 }
 
@@ -132,34 +155,20 @@ function startOfficialMatch() {
     hideOverlay();
     document.getElementById("match-controls").classList.remove("hidden");
     
-    localTimerStartMs = Date.now();
-
+    localTimerStartMs = Date.now(); 
     startTimers(); 
 
-    // THE 10-SECOND AUTO-ABORT
     autoAbortTimer = setTimeout(() => {
-        if (moveCounter === 1) { 
-            // We pass "true" to skip the confirmation popup!
-            sendAction("ABORT", true); 
-        }
+        if (moveCounter === 1) sendAction("ABORT", true); 
     }, 10000); 
 }
 
-// Added the 'skipConfirmation' parameter (defaults to false for button clicks)
 async function sendAction(actionType, skipConfirmation = false) {
     if (myColor === "SPECTATOR") return;
-
-    // Only show the popup if we ARE NOT skipping confirmation
     if (!skipConfirmation) {
         const actionWord = actionType === "RESIGN" ? "resign" : "abort the game";
-        const userConfirmed = window.confirm(`Are you sure you want to ${actionWord}?`);
-        
-        if (!userConfirmed) {
-            return; // Kill the function if they cancel
-        }
+        if (!window.confirm(`Are you sure you want to ${actionWord}?`)) return;
     }
-
-    // If they confirmed (or if it was an auto-abort), execute the action!
     await fetch(`${SERVER_URL}/action?action=${actionType}&color=${myColor}`);
 }
 
@@ -171,33 +180,35 @@ function executeLiveMoveUpdate(data) {
         clearTimeout(autoAbortTimer);
         autoAbortTimer = null;
     }
-
     if (moveCounter === 2) {
-        // White moved. Pass the bomb to Black, but KEEP the button visible!
         autoAbortTimer = setTimeout(() => {
-            if (moveCounter === 2) { 
-                sendAction("ABORT", true);
-            }
+            if (moveCounter === 2) sendAction("ABORT", true);
         }, 10000);
     } else if (moveCounter > 2) {
-        // Both players have moved. NOW we hide the abort button permanently.
         autoAbortTimer = null;
         document.getElementById("btn-abort").classList.add("hidden"); 
     }
 
-    // Sync the true server clocks!
     if (data.whiteTime !== undefined && data.blackTime !== undefined) {
         serverWhiteTimeMs = data.whiteTime;
         serverBlackTimeMs = data.blackTime;
-        localTimerStartMs = Date.now(); // Sync our local stopwatch!
+        localTimerStartMs = Date.now(); 
         updateClockUI(); 
         startTimers(); 
     }
 
+    // --- NEW: Save the last move coordinates ---
+    lastPlayedMove = { startX: data.startX, startY: data.startY, endX: data.endX, endY: data.endY };
+
     boardHistory.push(data.grid);
     currentViewIndex = boardHistory.length - 1;
 
+    // 1. Draw the board first
     drawBoard(data.grid);
+    
+    // 2. Immediately paint the highlights over the new board!
+    highlightLastMoveSquares(); 
+
     updateMaterial(data.grid);
 
     document.querySelectorAll('.check-square').forEach(el => el.classList.remove('check-square'));
@@ -228,16 +239,10 @@ function executeLiveMoveUpdate(data) {
 
 function executeLocalReset() {
     document.getElementById("match-controls").classList.add("hidden"); 
-    
     clearInterval(timerInterval);
-    if (autoAbortTimer) {
-        clearTimeout(autoAbortTimer);
-        autoAbortTimer = null;
-    }
+    if (autoAbortTimer) { clearTimeout(autoAbortTimer); autoAbortTimer = null; }
 
-    // Securely update the status bar
     updateStatusUI("White's Turn"); 
-
     document.getElementById("move-log").innerHTML = ""; 
     moveCounter = 1;
     selectedSquare = null;
@@ -245,7 +250,9 @@ function executeLocalReset() {
     currentViewIndex = -1;
     matchStarted = false;
     
-    // Reset the real-time trackers
+    // Clear highlights on reset
+    lastPlayedMove = null; 
+
     serverWhiteTimeMs = 600000;
     serverBlackTimeMs = 600000;
     localTimerStartMs = Date.now();
@@ -260,11 +267,18 @@ function executeLocalReset() {
     }
 }
 
+async function leaveTable() {
+    localStorage.removeItem("chessToken"); 
+    await fetch(`${SERVER_URL}/leave`); 
+}
+
+async function resetGame() { await fetch(`${SERVER_URL}/reset`); }
+
 // ==========================================
-// 4. ACTION FUNCTIONS (Optimistic UI)
+// 4. ACTION FUNCTIONS
 // ==========================================
 async function attemptMove(startX, startY, endX, endY, pieceCode) {
-    if (!matchStarted) return; // Prevent any movement in the lobby!
+    if (!matchStarted) return; 
 
     clearValidMoves(); 
     const startSquareDiv = document.getElementById(`square-${startX}-${startY}`);
@@ -293,18 +307,6 @@ async function attemptMove(startX, startY, endX, endY, pieceCode) {
     }
 }
 
-async function resetGame() {
-    await fetch(`${SERVER_URL}/reset`);
-}
-
-async function leaveTable() {
-    // 1. Delete the local token from the player's browser
-    localStorage.removeItem("chessToken"); 
-    
-    // 2. Tell Java to wipe the seats and kick everyone
-    await fetch(`${SERVER_URL}/leave`); 
-}
-
 // ==========================================
 // 5. RENDERING & UI LOGIC
 // ==========================================
@@ -313,57 +315,70 @@ async function fetchBoard() {
         const response = await fetch(`${SERVER_URL}/sync?t=${new Date().getTime()}`);
         const data = await response.json();
         
-        // 1. Instantly sync the true server clocks!
         if (data.whiteTime !== undefined && data.blackTime !== undefined) {
             serverWhiteTimeMs = data.whiteTime;
             serverBlackTimeMs = data.blackTime;
-            localTimerStartMs = Date.now(); // Sync our local stopwatch!
+            localTimerStartMs = Date.now(); 
             updateClockUI();
         }
 
-        // 2. REBUILD THE PAST FROM THE SERVER MEMORY
         document.getElementById("move-log").innerHTML = "";
         moveCounter = 1;
         boardHistory = [INITIAL_BOARD]; 
         
         if (data.moveHistory && data.moveHistory.length > 0) {
-            // Fast-forward through every move that happened
+            // --- NEW: Grab the very last move from history to highlight on refresh ---
+            const lastMove = data.moveHistory[data.moveHistory.length - 1];
+            lastPlayedMove = { startX: lastMove.startX, startY: lastMove.startY, endX: lastMove.endX, endY: lastMove.endY };
+
             data.moveHistory.forEach(move => {
                 logAlgebraicNotation(move.pieceCode, move.startX, move.startY, move.endX, move.endY, move.status, move.promotion);
                 boardHistory.push(move.grid);
                 lastKnownStatus = move.status;
             });
+        } else {
+            lastPlayedMove = null;
         }
         
-        // 3. Ensure the current grid perfectly matches Java
         boardHistory[boardHistory.length - 1] = data.grid;
         currentViewIndex = boardHistory.length - 1;
         
-        // 4. Update the UI
         updateStatusUI(lastKnownStatus);
+        
+        // 1. Draw the board
         drawBoard(data.grid);
+
+        // 2. Immediately paint the highlights!
+        highlightLastMoveSquares();
+
         updateMaterial(data.grid);
 
-        // 5. If the game is actively running, ensure the clocks are visually ticking!
         if (moveCounter > 1 && !lastKnownStatus.includes("CHECKMATE") && !lastKnownStatus.includes("DRAW") && !lastKnownStatus.includes("ABORT") && !lastKnownStatus.includes("RESIGN")) {
             startTimers();
         }
-        // ==========================================
-        // 6. NEW: BYPASS THE LOBBY ON REFRESH!
-        // ==========================================
+
         if (data.matchStarted && myColor !== "SPECTATOR") {
             matchStarted = true;
-            hideOverlay(); // Shatter the "I am Ready" screen!
-            document.getElementById("match-controls").classList.remove("hidden"); // Bring back the abort/resign buttons
-            // THE FIX: If more than 2 moves have happened, hide the Abort button!
-            // Remember: moveCounter starts at 1, so moveCounter > 2 means both have moved.
+            hideOverlay(); 
+            document.getElementById("match-controls").classList.remove("hidden");
             if (moveCounter > 2) {
                 document.getElementById("btn-abort").classList.add("hidden");
             }
         }
-
     } catch (error) {
-        document.getElementById("status").innerText = "Error connecting to server.";
+        console.log("Fetch error:", error);
+    }
+}
+
+// --- NEW: HIGHLIGHT PAINTER FUNCTION ---
+function highlightLastMoveSquares() {
+    // Only show highlights if we are looking at the live board
+    if (currentViewIndex === boardHistory.length - 1 && lastPlayedMove) {
+        const startSquare = document.getElementById(`square-${lastPlayedMove.startX}-${lastPlayedMove.startY}`);
+        const endSquare = document.getElementById(`square-${lastPlayedMove.endX}-${lastPlayedMove.endY}`);
+
+        if (startSquare) startSquare.classList.add('last-move-highlight');
+        if (endSquare) endSquare.classList.add('last-move-highlight');
     }
 }
 
@@ -415,9 +430,7 @@ function handleSquareClick(row, col, squareDiv, pieceCode) {
     if (currentViewIndex < boardHistory.length - 1) return;
     if (selectedSquare === null) {
         if (pieceCode !== "") {
-            if (myColor === "SPECTATOR" || pieceCode[0] !== (myColor === "WHITE" ? 'w' : 'b')) {
-                return; 
-            }
+            if (myColor === "SPECTATOR" || pieceCode[0] !== (myColor === "WHITE" ? 'w' : 'b')) { return; }
             selectedSquare = { x: row, y: col, div: squareDiv, piece: pieceCode };
             squareDiv.classList.add("selected");
             showValidMoves(row, col);
@@ -472,14 +485,11 @@ function renderCapturedPieces(containerId, pieces, advantage) {
     const container = document.getElementById(containerId);
     container.innerHTML = ""; 
     
-    // ==========================================
-    // THE FIX: Hide the box if it is completely empty!
-    // ==========================================
     if (pieces.length === 0 && !advantage) {
         container.style.display = "none";
-        return; // Stop the function here, we don't need to do anything else!
+        return; 
     } else {
-        container.style.display = "flex"; // Bring the box back!
+        container.style.display = "flex"; 
     }
 
     const sortOrder = { 'Q': 1, 'R': 2, 'B': 3, 'N': 4, 'P': 5 };
@@ -504,7 +514,9 @@ function updateTimelineUI() {
     } else {
         boardDiv.classList.remove("review-mode"); statusDiv.innerText = lastKnownStatus;
     }
+    
     drawBoard(boardHistory[currentViewIndex]);
+    highlightLastMoveSquares(); // Paint timeline highlights
     updateMaterial(boardHistory[currentViewIndex]); 
     document.querySelectorAll('.check-square').forEach(el => el.classList.remove('check-square'));
 }
@@ -569,12 +581,8 @@ function highlightKingInCheck(text, grid) {
     }
 }
 
-// We can now tell the overlay whether or not to generate a Play Again button!
-// We can now tell the overlay whether or not to generate the post-game buttons!
 function displayOverlay(message, showReset = false) { 
     let finalHtml = message;
-    
-    // Only show the buttons if requested AND if they are an actual player!
     if (showReset && myColor !== "SPECTATOR") {
         finalHtml += `
         <br><br>
@@ -583,11 +591,9 @@ function displayOverlay(message, showReset = false) {
             <button onclick="leaveTable()" style="padding:10px 20px; font-size:18px; cursor:pointer; background-color:#c0392b; color:white; border:none; border-radius:5px;">Leave Table</button>
         </div>`;
     }
-    
     document.getElementById("overlay-message").innerHTML = finalHtml; 
     document.getElementById("overlay").classList.remove("hidden"); 
 }
-
 function hideOverlay() { document.getElementById("overlay").classList.add("hidden"); }
 
 // ==========================================
@@ -600,22 +606,14 @@ function startTimers() {
         return; 
     }
 
-    // Run the UI update very fast (every 200ms) for maximum smoothness
     timerInterval = setInterval(() => {
         const statusUpper = lastKnownStatus.toUpperCase();
-        
-        // Calculate the EXACT mathematical time that has passed in the real world
         const elapsedLocalMs = Date.now() - localTimerStartMs;
-
         let displayWhiteMs = serverWhiteTimeMs;
         let displayBlackMs = serverBlackTimeMs;
 
-        // Only subtract the elapsed time from the player whose turn it currently is
-        if (statusUpper.includes("WHITE")) {
-            displayWhiteMs -= elapsedLocalMs;
-        } else if (statusUpper.includes("BLACK")) {
-            displayBlackMs -= elapsedLocalMs;
-        }
+        if (statusUpper.includes("WHITE")) displayWhiteMs -= elapsedLocalMs;
+        else if (statusUpper.includes("BLACK")) displayBlackMs -= elapsedLocalMs;
         
         updateClockUI(displayWhiteMs, displayBlackMs);
 
@@ -626,7 +624,6 @@ function startTimers() {
     }, 200); 
 }
 
-// Now accepts raw milliseconds and formats them mathematically
 function updateClockUI(wMs = serverWhiteTimeMs, bMs = serverBlackTimeMs) {
     const formatTime = (totalMs) => {
         if (totalMs <= 0) return "00:00";
@@ -635,14 +632,8 @@ function updateClockUI(wMs = serverWhiteTimeMs, bMs = serverBlackTimeMs) {
         const s = (totalSeconds % 60).toString().padStart(2, '0');
         return `${m}:${s}`;
     };
-
-    const wClock = document.getElementById("white-clock");
-    const bClock = document.getElementById("black-clock");
-
-    wClock.innerText = formatTime(wMs);
-    bClock.innerText = formatTime(bMs);
-
-    // Pulse red if under 30,000 milliseconds (30 seconds)
+    const wClock = document.getElementById("white-clock"); const bClock = document.getElementById("black-clock");
+    wClock.innerText = formatTime(wMs); bClock.innerText = formatTime(bMs);
     wMs < 30000 ? wClock.classList.add("time-low") : wClock.classList.remove("time-low");
     bMs < 30000 ? bClock.classList.add("time-low") : bClock.classList.remove("time-low");
 }
@@ -656,12 +647,6 @@ function updateClockUI(wMs = serverWhiteTimeMs, bMs = serverBlackTimeMs) {
     fetchBoard();
 })();
 
-// ==========================================
-// 8. BROWSER TAB SYNC (Fixes sleepy clocks!)
-// ==========================================
 document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible") {
-        // The moment the user clicks back to this tab, ask Java for the true time!
-        fetchBoard(); 
-    }
+    if (document.visibilityState === "visible") fetchBoard(); 
 });

@@ -1,6 +1,21 @@
 /* ==========================================
    1. CORE & LAYOUT
    ========================================== */
+/* ==========================================
+   NEW: THEME VARIABLES
+   ========================================== */
+:root {
+    /* Default Theme: Classic Wood */
+    --light-square: #f0d9b5;
+    --dark-square: #b58863;
+    --highlight-color: rgba(255, 170, 0, 0.45);
+}
+
+/* Update your existing classes to use the variables! */
+.light { background-color: var(--light-square); }
+.dark { background-color: var(--dark-square); }
+.last-move-highlight { background-color: var(--highlight-color) !important; }
+
 body {
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     display: flex;
@@ -64,7 +79,24 @@ body {
     justify-content: center;
 }
 
-.left-column { display: flex; flex-direction: column; }
+/* 1. The Main Container */
+.left-column {
+    display: flex;
+    flex-direction: column; 
+    position: relative;
+}
+
+/* 2. The Flip Logic (Swaps Top and Bottom player info) */
+.left-column.flipped-board {
+    flex-direction: column-reverse;
+}
+
+/* 3. The Player Wrappers (Locks the text in place!) */
+.player-info {
+    display: flex;
+    flex-direction: column; /* Keeps Name -> Clock -> Captured in order */
+    /* Add any other styles you already have for player-info like padding or alignment */
+}
 
 /* ==========================================
    2. BOARD & COORDINATES
@@ -93,9 +125,6 @@ body {
     align-items: center; user-select: none; transition: background-color 0.2s; 
 }
 
-.light { background-color: #f0d9b5; }
-.dark { background-color: #b58863; }
-
 /* Visual Feedback Classes */
 .drag-over { background-color: #f1c40f !important; box-shadow: inset 0 0 15px rgba(0,0,0,0.5); }
 .dragging { opacity: 0.5; }
@@ -121,14 +150,36 @@ body {
 /* ==========================================
    3. PIECES
    ========================================== */
+/* Update this rule to REMOVE the animation line */
 .piece-symbol {
-    font-size: 65px; cursor: grab; 
+    font-size: 65px; 
+    cursor: grab;
     user-select: none;
-    /* z-index: 2; 
-    text-shadow: 1px 1px 2px rgba(0,0,0,0.2), -1px -1px 2px rgba(255,255,255,0.1); */
+    transition: transform 0.1s ease-in-out, text-shadow 0.1s ease-in-out;
+    /* (The animation line has been deleted from here!) */
 }
 
-.piece-symbol:active { cursor: grabbing; }
+/* Add this brand NEW rule right below it */
+.animate-drop {
+    animation: pieceDrop 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275) both;
+}
+
+/* Make the piece lift up and cast a larger shadow when hovering or dragging */
+.piece-symbol:hover, .piece-symbol.dragging {
+    transform: scale(1.15) translateY(-5px);
+    text-shadow: 0px 15px 15px rgba(0,0,0,0.4);
+    z-index: 50;
+}
+
+.piece-symbol:active {
+    cursor: grabbing;
+}
+
+/* A highly satisfying "bounce" effect when a piece lands on a square */
+@keyframes pieceDrop {
+    0% { transform: scale(0.5) translateY(-20px); opacity: 0; }
+    100% { transform: scale(1) translateY(0); opacity: 1; }
+}
 .white-piece { color: #ffffff; text-shadow: 0 0 1px black, 0 0 1px black, 0 0 1px black, 0 0 1px black; }
 .black-piece { color: #000000; }
 
@@ -212,12 +263,47 @@ button:hover { background-color: #4e6d8c; }
 /* ==========================================
    7. PLAYER INFO, CLOCKS & CAPTURED PIECES
    ========================================== */
+/* ==========================================
+   4. PLAYER INFO (Names, Clocks, Captures)
+   ========================================== */
 .player-info {
-    display: flex; align-items: center; gap: 15px;
-    margin-left: 35px; margin-top: 5px; margin-bottom: 5px; height: 30px;
+    display: flex;
+    flex-direction: row; /* FORCES everything to stay side-by-side */
+    align-items: center;
+    justify-content: flex-start; /* Aligns everything to the left edge */
+    gap: 15px; /* Creates perfect spacing between Name and Clock */
+    width: 100%; /* Perfectly matches the width of the board */
+    padding: 5px 0; /* Minimal padding so it stays flush with the board */
+    box-sizing: border-box;
+    /* Optional: Remove the background: rgba(...) here if you just want clean text */
 }
 
-.player-name { font-size: 18px; font-weight: bold; color: #ecf0f1; }
+.player-name { 
+    font-size: 18px; 
+    font-weight: bold; 
+    margin: 0;
+}
+
+.clock {
+    font-size: 20px; 
+    font-weight: bold;
+    font-family: monospace;
+    background: #1a252f;
+    padding: 4px 12px;
+    border-radius: 5px;
+    color: #ecf0f1;
+    margin: 0;
+}
+
+.captured-area {
+    display: flex;
+    align-items: center;
+    flex-wrap: nowrap; /* Prevents pieces from dropping to a new line */
+    margin-left: auto; /* PRO-TIP: This pushes the captured pieces to the far right edge! */
+    min-height: 30px;
+}
+
+/* Keep your existing .captured-white, .captured-black, and .advantage-score here! */
 
 .captured-area {
     display: flex; align-items: center; gap: 2px; font-size: 24px; 
@@ -228,12 +314,6 @@ button:hover { background-color: #4e6d8c; }
 .captured-black { color: #000000; }
 
 .advantage-score { font-size: 14px; font-weight: bold; margin-left: 8px; color: #7fa650; font-family: monospace; }
-
-.clock {
-    background-color: #1a252f; padding: 5px 12px; border-radius: 4px;
-    font-family: monospace; font-size: 20px; font-weight: bold; color: #ecf0f1;
-    border: 2px solid #34495e; min-width: 60px; text-align: center;
-}
 
 /* Safe pulse animation that does not break CSS Transforms */
 @keyframes safePulse {
@@ -249,27 +329,71 @@ button:hover { background-color: #4e6d8c; }
 }
 
 /* ==========================================
-   8. FLIPPED BOARD MAGIC (BLACK'S PERSPECTIVE)
+   THE UI FLIP (Replaces the old rotation)
    ========================================== */
+.left-column {
+    display: flex;
+    flex-direction: column; 
+    position: relative;
+}
 
-/* 1. Rotate the entire left column (Board, Timers, and Coordinates) */
+/* When playing as Black, this simply reverses the stacking order! 
+   Top Player moves to bottom, Bottom Player moves to top, Board stays in middle. */
 .flipped-board {
-    transform: rotate(180deg);
+    flex-direction: column-reverse;
 }
 
-/* 2. Counter-rotate the board coordinates and pieces */
-.flipped-board .piece-symbol,
-.flipped-board .coords-y span,
-.flipped-board .coords-x span {
-    transform: rotate(180deg);
+/* ==========================================
+   SMART BOARD COORDINATES
+   ========================================== */
+.coord-rank {
+    position: absolute;
+    top: 3px;
+    left: 4px;
+    font-size: 13px;
+    font-weight: bold;
+    pointer-events: none; /* Stops them from blocking drag-and-drop! */
 }
 
-/* 3. Counter-rotate the ENTIRE player info box together */
-.flipped-board .player-info {
-    transform: rotate(180deg);
+.coord-file {
+    position: absolute;
+    bottom: 1px;
+    right: 4px;
+    font-size: 13px;
+    font-weight: bold;
+    pointer-events: none;
 }
 
-.last-move-highlight {
-    background-color: rgba(246, 246, 130, 0.45) !important; 
+/* Make coordinates match the square color for high contrast */
+.dark .coord-rank, .dark .coord-file { color: var(--light-square); }
+.light .coord-rank, .light .coord-file { color: var(--dark-square); }
+
+/* ==========================================
+   PREMIUM THEME SWATCHES
+   ========================================== */
+.sidebar-settings {
+    margin-top: 15px; padding-top: 15px; border-top: 2px solid #2c3e50;
+    display: flex; justify-content: space-between; align-items: center;
 }
 
+.theme-swatches { display: flex; gap: 10px; }
+
+.swatch {
+    width: 32px; height: 32px; border-radius: 50%; border: 2px solid transparent;
+    cursor: pointer; transition: transform 0.2s, border-color 0.2s, box-shadow 0.2s;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.3); padding: 0;
+}
+
+.swatch:hover { transform: scale(1.15); }
+
+/* The Glowing Ring for the selected theme */
+.swatch.active { 
+    border-color: #f1c40f; 
+    transform: scale(1.1); 
+    box-shadow: 0 0 12px rgba(241, 196, 15, 0.6); 
+}
+
+/* Swatch Previews (Splits the circle into Light and Dark squares!) */
+.swatch.wood { background: linear-gradient(135deg, #f0d9b5 50%, #b58863 50%); }
+.swatch.ocean { background: linear-gradient(135deg, #dee3e6 50%, #8ca2ad 50%); }
+.swatch.midnight { background: linear-gradient(135deg, #cdc9d8 50%, #695b8e 50%); }

@@ -21,7 +21,7 @@
         
         <div class="game-layout">
             <div class="left-column">
-                
+            
                 <div class="player-info">
                     <span class="player-name">Black</span>
                     <div class="clock" id="black-clock">10:00</div>
@@ -29,17 +29,9 @@
                 </div>
 
                 <div class="board-with-coords">
-                    <div class="coords-y">
-                        <span>8</span><span>7</span><span>6</span><span>5</span><span>4</span><span>3</span><span>2</span><span>1</span>
-                    </div>
-                    
                     <div id="board-area">
                         <div id="chessboard"></div>
                     </div>
-                </div>
-
-                <div class="coords-x">
-                    <span>a</span><span>b</span><span>c</span><span>d</span><span>e</span><span>f</span><span>g</span><span>h</span>
                 </div>
 
                 <div class="player-info">
@@ -64,6 +56,15 @@
                     <button onclick="viewPrevious()" title="Previous Move">&lt;</button>
                     <button onclick="viewNext()" title="Next Move">&gt;</button>
                     <button onclick="viewLive()" title="Live Game">&gt;|</button>
+                </div>
+
+                <div class="sidebar-settings">
+                    <label style="font-size: 14px; font-weight: bold; color: #bdc3c7;">Board Theme:</label>
+                    <div class="theme-swatches" id="theme-swatches">
+                        <button class="swatch wood" onclick="changeTheme('wood')" title="Classic Wood"></button>
+                        <button class="swatch ocean" onclick="changeTheme('ocean')" title="Ocean Blue"></button>
+                        <button class="swatch midnight" onclick="changeTheme('midnight')" title="Midnight Purple"></button>
+                    </div>
                 </div>
             </div>
         </div>

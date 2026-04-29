@@ -85,6 +85,18 @@
         <div id="overlay-message"></div>
     </div>
 
+    <!-- NEW: Custom Confirmation Modal -->
+    <div id="confirm-modal" class="hidden">
+        <div class="confirm-box">
+            <h3 id="confirm-title">Are you sure?</h3>
+            <p id="confirm-message">Do you really want to do this?</p>
+            <div class="confirm-buttons">
+                <button id="btn-confirm-yes" class="btn-danger">Yes</button>
+                <button id="btn-confirm-no" class="btn-cancel">Cancel</button>
+            </div>
+        </div>
+    </div>
+
     <script src="https://cdnjs.cloudflare.com/ajax/libs/sockjs-client/1.6.1/sockjs.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/stomp.js/2.3.3/stomp.min.js"></script>
 

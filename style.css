@@ -1,133 +1,91 @@
 /* ==========================================
-   1. CORE & LAYOUT
-   ========================================== */
-/* ==========================================
-   NEW: THEME VARIABLES
+   1. THEME VARIABLES & CORE APP LOCK
    ========================================== */
 :root {
-    /* Default Theme: Classic Wood */
     --light-square: #f0d9b5;
     --dark-square: #b58863;
     --highlight-color: rgba(255, 170, 0, 0.45);
 }
 
-/* Update your existing classes to use the variables! */
-.light { background-color: var(--light-square); }
-.dark { background-color: var(--dark-square); }
-.last-move-highlight { background-color: var(--highlight-color) !important; }
-
-body {
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    min-height: 100vh;
+html, body {
+    height: 100vh; 
+    width: 100vw;
+    overflow: hidden; /* THE MAGIC BULLET: Forbids the page from scrolling */
     margin: 0;
-    background-color: #2c3e50;
-    color: white;
+    padding: 0;
+    background-color: #2c3e50; 
+    color: #ecf0f1; 
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
 }
+
+.main-container {
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    padding: 10px;
+    box-sizing: border-box;
+}
+
+h1 { margin: 5px 0 15px 0; text-align: center; font-size: 24px; }
 
 /* ==========================================
-   NEW: LOADING SCREEN
+   2. DESKTOP & LAPTOP LAYOUT
    ========================================== */
-#loading-screen {
-    position: fixed;
-    top: 0; left: 0; width: 100vw; height: 100vh;
-    background-color: #2c3e50;
-    display: flex; flex-direction: column;
-    justify-content: center; align-items: center;
-    z-index: 9999; /* Forces it above absolutely everything else */
-    transition: opacity 0.5s ease-out, visibility 0.5s ease-out;
-}
-
-.bouncing-pawn {
-    font-size: 100px;
-    animation: bounce 0.8s infinite alternate cubic-bezier(0.2, 0.8, 0.2, 1);
-    text-shadow: 0 15px 25px rgba(0,0,0,0.5);
-    margin-bottom: 20px;
-}
-
-#loading-text {
-    color: #f1c40f;
-    animation: pulseText 1.5s infinite;
-}
-
-@keyframes bounce {
-    0% { transform: translateY(0) scaleY(0.9); }
-    100% { transform: translateY(-40px) scaleY(1.05); }
-}
-
-@keyframes pulseText {
-    0% { opacity: 0.6; }
-    50% { opacity: 1; }
-    100% { opacity: 0.6; }
-}
-
-/* We will trigger this class from JavaScript to fade it out */
-.fade-out {
-    opacity: 0;
-    visibility: hidden;
-}
-
-.main-container { display: flex; flex-direction: column; align-items: center; gap: 10px; }
-
 .game-layout {
+    flex: 1;
+    min-height: 0;
     display: flex;
-    flex-wrap: wrap; 
-    gap: 40px; 
-    align-items: flex-start;
+    flex-direction: row;
+    align-items: center;
     justify-content: center;
+    gap: 30px;
 }
 
-/* 1. The Main Container */
 .left-column {
     display: flex;
-    flex-direction: column; 
+    flex-direction: column;
+    justify-content: center;
     position: relative;
+    gap: 10px;
+    height: 100%;
+    width: min(95vw, 70vh); /* Safari Fix: Strict width boundary */
 }
 
-/* 2. The Flip Logic (Swaps Top and Bottom player info) */
+/* Swaps Top and Bottom player info when playing as Black */
 .left-column.flipped-board {
     flex-direction: column-reverse;
 }
 
-/* 3. The Player Wrappers (Locks the text in place!) */
-.player-info {
-    display: flex;
-    flex-direction: column; /* Keeps Name -> Clock -> Captured in order */
-    /* Add any other styles you already have for player-info like padding or alignment */
-}
-
 /* ==========================================
-   2. BOARD & COORDINATES
+   3. THE AUTO-SCALING CHESSBOARD
    ========================================== */
-.board-with-coords { display: flex; align-items: center; }
-
-.coords-y {
-    display: grid; grid-template-rows: repeat(8, 80px); align-items: center;
-    padding-right: 15px; font-weight: bold; color: #bdc3c7; font-size: 18px;
-}
-
-.coords-x {
-    display: grid; grid-template-columns: repeat(8, 80px); text-align: center;
-    margin-left: 25px; padding-top: 5px; font-weight: bold; color: #bdc3c7; font-size: 18px;
+#chessboard {
+    width: min(95vw, 70vh);
+    height: min(95vw, 70vh);
+    display: grid;
+    grid-template-columns: repeat(8, minmax(0, 1fr));
+    grid-template-rows: repeat(8, minmax(0, 1fr));
+    border: 4px solid #1a252f;
+    border-radius: 4px;
+    background-color: var(--light-square);
+    box-sizing: border-box;
 }
 
 #board-area { position: relative; }
 
-#chessboard {
-    display: grid; grid-template-columns: repeat(8, 80px); grid-template-rows: repeat(8, 80px);
-    border: 5px solid #1a252f; box-shadow: 0px 15px 30px rgba(0,0,0,0.6);
-}
-
 .square {
-    width: 80px; height: 80px; display: flex; justify-content: center; position: relative;
+    width: 100%; 
+    height: 100%;
+    
+    display: flex; justify-content: center; position: relative;
     align-items: center; user-select: none; transition: background-color 0.2s; 
 }
 
-/* Visual Feedback Classes */
+/* Square Colors & Highlights */
+.light { background-color: var(--light-square); }
+.dark { background-color: var(--dark-square); }
+.last-move-highlight { background-color: var(--highlight-color) !important; }
 .drag-over { background-color: #f1c40f !important; box-shadow: inset 0 0 15px rgba(0,0,0,0.5); }
-.dragging { opacity: 0.5; }
 .selected { background-color: #7fa650 !important; } 
 .invalid-move { background-color: rgba(255, 0, 0, 0.5) !important; }
 
@@ -147,51 +105,89 @@ body {
     background-color: rgba(0, 0, 0, 0.2); border-radius: 50%; pointer-events: none;
 }
 
+/* Smart Coordinates */
+.coord-rank { position: absolute; top: 3px; left: 4px; font-size: 13px; font-weight: bold; pointer-events: none; }
+.coord-file { position: absolute; bottom: 1px; right: 4px; font-size: 13px; font-weight: bold; pointer-events: none; }
+.dark .coord-rank, .dark .coord-file { color: var(--light-square); }
+.light .coord-rank, .light .coord-file { color: var(--dark-square); }
+
 /* ==========================================
-   3. PIECES
+   4. PIECES
    ========================================== */
-/* Update this rule to REMOVE the animation line */
 .piece-symbol {
-    font-size: 65px; 
-    cursor: grab;
-    user-select: none;
+    font-size: 65px; cursor: grab; user-select: none;
     transition: transform 0.1s ease-in-out, text-shadow 0.1s ease-in-out;
-    /* (The animation line has been deleted from here!) */
 }
 
-/* Add this brand NEW rule right below it */
 .animate-drop {
     animation: pieceDrop 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275) both;
 }
 
-/* Make the piece lift up and cast a larger shadow when hovering or dragging */
 .piece-symbol:hover, .piece-symbol.dragging {
     transform: scale(1.15) translateY(-5px);
     text-shadow: 0px 15px 15px rgba(0,0,0,0.4);
-    z-index: 50;
+    z-index: 50; opacity: 1; /* Override dragging opacity if previously set */
 }
 
-.piece-symbol:active {
-    cursor: grabbing;
-}
+.piece-symbol.dragging { opacity: 0.5; }
+.piece-symbol:active { cursor: grabbing; }
 
-/* A highly satisfying "bounce" effect when a piece lands on a square */
 @keyframes pieceDrop {
     0% { transform: scale(0.5) translateY(-20px); opacity: 0; }
     100% { transform: scale(1) translateY(0); opacity: 1; }
 }
+
 .white-piece { color: #ffffff; text-shadow: 0 0 1px black, 0 0 1px black, 0 0 1px black, 0 0 1px black; }
 .black-piece { color: #000000; }
 
 /* ==========================================
-   4. SIDEBAR & CONTROLS
+   5. PLAYER INFO (Names, Clocks, Captures)
    ========================================== */
-#sidebar {
-    width: 250px; height: 650px; background-color: #1a252f; border-radius: 8px;
-    padding: 15px; box-shadow: 0px 10px 20px rgba(0,0,0,0.5); display: flex; flex-direction: column;
+.player-info {
+    display: flex; flex-direction: row; align-items: center; justify-content: flex-start; 
+    gap: 15px; width: 100%; padding: 5px 0; box-sizing: border-box;
 }
 
-#sidebar h3 { margin-top: 0; text-align: center; border-bottom: 2px solid #34495e; padding-bottom: 10px; }
+.player-name { font-size: 18px; font-weight: bold; margin: 0; }
+
+.clock {
+    font-size: 20px; font-weight: bold; font-family: monospace;
+    background: #1a252f; padding: 4px 12px; border-radius: 5px; color: #ecf0f1; margin: 0;
+}
+
+.captured-area {
+    display: flex; align-items: center; flex-wrap: nowrap; margin-left: auto; gap: 2px; 
+    font-size: 24px; background-color: rgba(0, 0, 0, 0.2); padding: 2px 8px; 
+    border-radius: 5px; min-height: 28px;
+}
+
+.captured-white { color: #ffffff; text-shadow: 0 0 1px black, 0 0 1px black; }
+.captured-black { color: #000000; }
+.advantage-score { font-size: 14px; font-weight: bold; margin-left: 8px; color: #7fa650; font-family: monospace; }
+
+.time-low { animation: safePulse 1s infinite; color: #e74c3c !important; font-weight: bold; }
+
+@keyframes safePulse {
+    0% { color: inherit; text-shadow: none; border-color: #34495e; }
+    50% { color: #e74c3c; text-shadow: 0 0 8px #e74c3c; border-color: #e74c3c; }
+    100% { color: inherit; text-shadow: none; border-color: #34495e; }
+}
+
+/* ==========================================
+   6. THE SIDEBAR & MATCH HISTORY
+   ========================================== */
+#sidebar {
+    width: 320px;
+    height: min(100%, 75vh);
+    background: #34495e;
+    padding: 15px;
+    border-radius: 8px;
+    display: flex;
+    flex-direction: column;
+    box-sizing: border-box;
+}
+
+#sidebar h3 { margin-top: 0; text-align: center; border-bottom: 2px solid #2c3e50; padding-bottom: 10px; }
 
 #move-log {
     flex-grow: 1; overflow-y: auto; display: flex; flex-direction: column;
@@ -200,36 +196,80 @@ body {
 
 .log-entry { background-color: #2c3e50; padding: 8px; border-radius: 4px; border-left: 4px solid #7fa650; }
 
-.controls { text-align: center; display: flex; flex-direction: column; gap: 10px; }
-
 button { 
-    padding: 10px 20px; font-size: 16px; cursor: pointer; background-color: #34495e; 
+    padding: 10px 20px; font-size: 16px; cursor: pointer; background-color: #2c3e50; 
     color: white; border: 2px solid #1a252f; border-radius: 5px; transition: background-color 0.2s; 
 }
 button:hover { background-color: #4e6d8c; }
 
-/* Match Controls (Abort/Resign) */
 #match-controls { display: flex; justify-content: center; gap: 15px; margin-top: 15px; }
-#btn-abort, #btn-resign { padding: 8px 16px; font-weight: bold; border: none; border-radius: 4px; cursor: pointer; }
+#btn-abort, #btn-resign { padding: 8px 16px; font-weight: bold; border: none; border-radius: 4px; cursor: pointer; border: 2px solid transparent;}
 #btn-abort { background-color: #f39c12; color: white; }
 #btn-resign { background-color: #c0392b; color: white; }
-#btn-abort:hover { background-color: #e67e22; }
-#btn-resign:hover { background-color: #e74c3c; }
+#btn-abort:hover { background-color: #e67e22; border-color: white;}
+#btn-resign:hover { background-color: #e74c3c; border-color: white;}
+
+.history-controls {
+    display: flex; justify-content: center; gap: 5px; margin-top: 10px;
+    border-top: 2px solid #2c3e50; padding-top: 10px;
+}
+
+.history-controls button { padding: 8px 15px; font-size: 14px; font-weight: bold; }
+.history-controls button:hover { background-color: #f1c40f; color: #2c3e50; }
+
+.review-mode { border-color: #e67e22 !important; box-shadow: 0px 15px 30px rgba(230, 126, 34, 0.5) !important; }
+.review-mode .square, .review-mode .piece-symbol { cursor: not-allowed !important; }
+
+/* Premium Theme Swatches */
+.sidebar-settings {
+    margin-top: 15px; padding-top: 15px; border-top: 2px solid #2c3e50;
+    display: flex; justify-content: space-between; align-items: center;
+}
+
+.theme-swatches { display: flex; gap: 10px; }
+.swatch {
+    width: 32px; height: 32px; border-radius: 50%; border: 2px solid transparent;
+    cursor: pointer; transition: transform 0.2s, border-color 0.2s, box-shadow 0.2s;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.3); padding: 0;
+}
+.swatch:hover { transform: scale(1.15); }
+.swatch.active { border-color: #f1c40f; transform: scale(1.1); box-shadow: 0 0 12px rgba(241, 196, 15, 0.6); }
+
+.swatch.wood { background: linear-gradient(135deg, #f0d9b5 50%, #b58863 50%); }
+.swatch.ocean { background: linear-gradient(135deg, #dee3e6 50%, #8ca2ad 50%); }
+.swatch.midnight { background: linear-gradient(135deg, #cdc9d8 50%, #695b8e 50%); }
 
 /* ==========================================
-   5. OVERLAYS & MODALS
+   7. MOBILE VIEW (The Stack)
    ========================================== */
+@media (max-width: 800px) {
+    .game-layout { flex-direction: column; justify-content: flex-start; gap: 10px; }
+    
+    .left-column { width: min(95vw, 55vh); }
+
+    #chessboard {
+        width: min(95vw, 55vh);
+        height: min(95vw, 55vh);
+    }
+    
+    #sidebar { width: min(95vw, 55vh); flex: 1; height: auto; padding: 10px; }
+    #sidebar h3 { margin-bottom: 5px; font-size: 16px; padding-bottom: 5px;}
+    .sidebar-settings { margin-top: 10px; padding-top: 10px; }
+}
+
+/* ==========================================
+   8. OVERLAYS, MODALS & LOADING
+   ========================================== */
+.hidden { opacity: 0; pointer-events: none; display: none !important; }
+
 #overlay, #promotion-modal {
-    position: fixed; 
-    top: 0; left: 0; width: 100vw; height: 100vh;
+    position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
     background-color: rgba(0, 0, 0, 0.7); backdrop-filter: blur(4px);
     display: flex; flex-direction: column; justify-content: center; align-items: center; 
-    z-index: 1000; 
-    transition: opacity 0.3s;
+    z-index: 1000; transition: opacity 0.3s;
 }
 
 #overlay-message { font-size: 60px; font-weight: bold; margin-bottom: 20px; color: #f1c40f; text-align: center;}
-.hidden { opacity: 0; pointer-events: none; display: none !important; }
 
 .promotion-box {
     background-color: #ecf0f1; border-radius: 10px; padding: 20px;
@@ -246,154 +286,68 @@ button:hover { background-color: #4e6d8c; }
 }
 .promo-choice:hover { background-color: #f1c40f; transform: scale(1.1); }
 
-/* ==========================================
-   6. TIMELINE & REVIEW MODE
-   ========================================== */
-.history-controls {
-    display: flex; justify-content: center; gap: 5px; margin-top: 10px;
-    border-top: 2px solid #34495e; padding-top: 10px;
+#loading-screen {
+    position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+    background-color: #2c3e50; display: flex; flex-direction: column;
+    justify-content: center; align-items: center; z-index: 9999; 
+    transition: opacity 0.5s ease-out, visibility 0.5s ease-out;
 }
 
-.history-controls button { padding: 8px 15px; font-size: 14px; font-weight: bold; background-color: #2c3e50; }
-.history-controls button:hover { background-color: #f1c40f; color: #2c3e50; }
-
-.review-mode { border-color: #e67e22 !important; box-shadow: 0px 15px 30px rgba(230, 126, 34, 0.5) !important; }
-.review-mode .square, .review-mode .piece-symbol { cursor: not-allowed !important; }
-
-/* ==========================================
-   7. PLAYER INFO, CLOCKS & CAPTURED PIECES
-   ========================================== */
-/* ==========================================
-   4. PLAYER INFO (Names, Clocks, Captures)
-   ========================================== */
-.player-info {
-    display: flex;
-    flex-direction: row; /* FORCES everything to stay side-by-side */
-    align-items: center;
-    justify-content: flex-start; /* Aligns everything to the left edge */
-    gap: 15px; /* Creates perfect spacing between Name and Clock */
-    width: 100%; /* Perfectly matches the width of the board */
-    padding: 5px 0; /* Minimal padding so it stays flush with the board */
-    box-sizing: border-box;
-    /* Optional: Remove the background: rgba(...) here if you just want clean text */
+.bouncing-pawn {
+    font-size: 100px; animation: bounce 0.8s infinite alternate cubic-bezier(0.2, 0.8, 0.2, 1);
+    text-shadow: 0 15px 25px rgba(0,0,0,0.5); margin-bottom: 20px;
 }
 
-.player-name { 
-    font-size: 18px; 
-    font-weight: bold; 
-    margin: 0;
+#loading-text { color: #f1c40f; animation: pulseText 1.5s infinite; }
+
+@keyframes bounce {
+    0% { transform: translateY(0) scaleY(0.9); }
+    100% { transform: translateY(-40px) scaleY(1.05); }
 }
 
-.clock {
-    font-size: 20px; 
+@keyframes pulseText {
+    0% { opacity: 0.6; }
+    50% { opacity: 1; }
+    100% { opacity: 0.6; }
+}
+
+.fade-out { opacity: 0; visibility: hidden; }
+
+/* ==========================================
+   9. BOTTOM STATUS TEXT ALIGNMENT
+   ========================================== */
+#status {  /* <-- Change this if your HTML ID is different! */
+    text-align: center;
+    align-self: center; /* This forces it to the middle of the Flexbox */
+    font-size: 20px;
     font-weight: bold;
-    font-family: monospace;
-    background: #1a252f;
-    padding: 4px 12px;
-    border-radius: 5px;
-    color: #ecf0f1;
-    margin: 0;
-}
-
-.captured-area {
-    display: flex;
-    align-items: center;
-    flex-wrap: nowrap; /* Prevents pieces from dropping to a new line */
-    margin-left: auto; /* PRO-TIP: This pushes the captured pieces to the far right edge! */
-    min-height: 30px;
-}
-
-/* Keep your existing .captured-white, .captured-black, and .advantage-score here! */
-
-.captured-area {
-    display: flex; align-items: center; gap: 2px; font-size: 24px; 
-    background-color: rgba(0, 0, 0, 0.2); padding: 2px 8px; border-radius: 5px; min-height: 28px;
-}
-
-.captured-white { color: #ffffff; text-shadow: 0 0 1px black, 0 0 1px black; }
-.captured-black { color: #000000; }
-
-.advantage-score { font-size: 14px; font-weight: bold; margin-left: 8px; color: #7fa650; font-family: monospace; }
-
-/* Safe pulse animation that does not break CSS Transforms */
-@keyframes safePulse {
-    0% { color: inherit; text-shadow: none; border-color: #34495e; }
-    50% { color: #e74c3c; text-shadow: 0 0 8px #e74c3c; border-color: #e74c3c; }
-    100% { color: inherit; text-shadow: none; border-color: #34495e; }
-}
-
-.time-low {
-    animation: safePulse 1s infinite;
-    color: #e74c3c !important;
-    font-weight: bold;
+    margin-top: 15px;
+    width: 100%;
 }
 
 /* ==========================================
-   THE UI FLIP (Replaces the old rotation)
+   9. CUSTOM CONFIRMATION MODAL
    ========================================== */
-.left-column {
-    display: flex;
-    flex-direction: column; 
-    position: relative;
+#confirm-modal {
+    position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+    background-color: rgba(0, 0, 0, 0.7); backdrop-filter: blur(4px);
+    display: flex; flex-direction: column; justify-content: center; align-items: center; 
+    z-index: 2000; transition: opacity 0.2s;
 }
 
-/* When playing as Black, this simply reverses the stacking order! 
-   Top Player moves to bottom, Bottom Player moves to top, Board stays in middle. */
-.flipped-board {
-    flex-direction: column-reverse;
+.confirm-box {
+    background-color: #34495e; border-radius: 10px; padding: 25px;
+    box-shadow: 0 15px 30px rgba(0,0,0,0.6); text-align: center; color: #ecf0f1;
+    width: 300px; border: 2px solid #2c3e50;
 }
 
-/* ==========================================
-   SMART BOARD COORDINATES
-   ========================================== */
-.coord-rank {
-    position: absolute;
-    top: 3px;
-    left: 4px;
-    font-size: 13px;
-    font-weight: bold;
-    pointer-events: none; /* Stops them from blocking drag-and-drop! */
-}
+.confirm-box h3 { margin-top: 0; margin-bottom: 10px; font-size: 22px; color: #f1c40f; }
+.confirm-box p { margin-bottom: 25px; font-size: 16px; }
 
-.coord-file {
-    position: absolute;
-    bottom: 1px;
-    right: 4px;
-    font-size: 13px;
-    font-weight: bold;
-    pointer-events: none;
-}
+.confirm-buttons { display: flex; justify-content: space-between; gap: 15px; }
 
-/* Make coordinates match the square color for high contrast */
-.dark .coord-rank, .dark .coord-file { color: var(--light-square); }
-.light .coord-rank, .light .coord-file { color: var(--dark-square); }
+.btn-danger { background-color: #c0392b !important; flex: 1; border: 2px solid transparent !important; }
+.btn-danger:hover { background-color: #e74c3c !important; border-color: white !important; }
 
-/* ==========================================
-   PREMIUM THEME SWATCHES
-   ========================================== */
-.sidebar-settings {
-    margin-top: 15px; padding-top: 15px; border-top: 2px solid #2c3e50;
-    display: flex; justify-content: space-between; align-items: center;
-}
-
-.theme-swatches { display: flex; gap: 10px; }
-
-.swatch {
-    width: 32px; height: 32px; border-radius: 50%; border: 2px solid transparent;
-    cursor: pointer; transition: transform 0.2s, border-color 0.2s, box-shadow 0.2s;
-    box-shadow: 0 4px 6px rgba(0,0,0,0.3); padding: 0;
-}
-
-.swatch:hover { transform: scale(1.15); }
-
-/* The Glowing Ring for the selected theme */
-.swatch.active { 
-    border-color: #f1c40f; 
-    transform: scale(1.1); 
-    box-shadow: 0 0 12px rgba(241, 196, 15, 0.6); 
-}
-
-/* Swatch Previews (Splits the circle into Light and Dark squares!) */
-.swatch.wood { background: linear-gradient(135deg, #f0d9b5 50%, #b58863 50%); }
-.swatch.ocean { background: linear-gradient(135deg, #dee3e6 50%, #8ca2ad 50%); }
-.swatch.midnight { background: linear-gradient(135deg, #cdc9d8 50%, #695b8e 50%); }
+.btn-cancel { background-color: #7f8c8d !important; flex: 1; border: 2px solid transparent !important; }
+.btn-cancel:hover { background-color: #95a5a6 !important; border-color: white !important; }

@@ -1,12 +1,11 @@
 // ==========================================
 // 1. CONFIGURATION & VARIABLES
 // ==========================================
-// --- NEW: SOUND EFFECTS ---
-// --- SOUND EFFECTS ---
 const sfxMove = new Audio('https://images.chesscomfiles.com/chess-themes/sounds/_MP3_/default/move-self.mp3');
 const sfxCapture = new Audio('https://images.chesscomfiles.com/chess-themes/sounds/_MP3_/default/capture.mp3');
 const sfxEnd = new Audio('https://images.chesscomfiles.com/chess-themes/sounds/_MP3_/default/notify.mp3');
-const sfxCheck = new Audio('https://images.chesscomfiles.com/chess-themes/sounds/_MP3_/default/move-check.mp3'); // <-- NEW!
+const sfxCheck = new Audio('https://images.chesscomfiles.com/chess-themes/sounds/_MP3_/default/move-check.mp3');
+const sfxWin = new Audio('https://images.chesscomfiles.com/chess-themes/sounds/_MP3_/default/game-end.mp3');
 
 const isLocal = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
 const PROD_BACKEND_URL = "https://dichess.onrender.com"; 
@@ -35,11 +34,8 @@ let selectedSquare = null;
 let boardHistory = []; 
 let currentViewIndex = -1; 
 let lastKnownStatus = "White's Turn"; 
-
-// --- NEW: LAST MOVE TRACKER ---
 let lastPlayedMove = null; 
 
-// LOBBY & CLOCK VARIABLES
 let myColor = "SPECTATOR";
 let matchStarted = false; 
 let autoAbortTimer = null; 
@@ -69,7 +65,6 @@ async function joinGame() {
         const response = await fetch(`${SERVER_URL}/join?token=${savedToken}`);
         const tokenResponse = await response.text(); 
         
-        // Hide loading screen when server wakes up
         const loadingScreen = document.getElementById("loading-screen");
         if (loadingScreen) loadingScreen.classList.add("fade-out");
 
@@ -114,39 +109,21 @@ function connectWebSocket() {
     stompClient = Stomp.over(socket);
     stompClient.debug = null; 
 
-    // ==========================================
-    // THE FIX: HEARTBEATS (Keeps Render Awake!)
-    // ==========================================
-    stompClient.heartbeat.outgoing = 20000; // Client pings server every 20 seconds
-    stompClient.heartbeat.incoming = 20000; // Server pings client every 20 seconds
+    stompClient.heartbeat.outgoing = 20000; 
+    stompClient.heartbeat.incoming = 20000; 
 
-    // We add an error function at the end to catch disconnects
     stompClient.connect({}, function (frame) {
-        
         stompClient.subscribe('/topic/game', function (message) {
             const data = JSON.parse(message.body);
             
-            if (data.type === "RESET") {
-                executeLocalReset();
-            } else if (data.type === "START") {
-                startOfficialMatch(); 
-            } else if (data.type === "MOVE") {
-                executeLiveMoveUpdate(data);
-            } else if (data.type === "KICK") {
-                window.location.reload(); 
-            }
+            if (data.type === "RESET") executeLocalReset();
+            else if (data.type === "START") startOfficialMatch(); 
+            else if (data.type === "MOVE") executeLiveMoveUpdate(data);
+            else if (data.type === "KICK") window.location.reload(); 
         });
-        
     }, function (error) {
-        // ==========================================
-        // THE FIX: AUTO-RECONNECT FAILSAFE
-        // ==========================================
         console.log("Connection lost! Attempting to reconnect...");
-        
-        // Show a temporary warning to the user
         document.getElementById("status").innerText = "⚠️ Reconnecting to server...";
-        
-        // Wait 3 seconds, then try to reconnect and fetch the latest board
         setTimeout(() => {
             connectWebSocket();
             fetchBoard(); 
@@ -160,22 +137,59 @@ function connectWebSocket() {
 function startOfficialMatch() {
     matchStarted = true;
     hideOverlay();
-    document.getElementById("match-controls").classList.remove("hidden");
+    
+    if (myColor !== "SPECTATOR") {
+        document.getElementById("match-controls").classList.remove("hidden");
+        const abortBtn = document.getElementById("btn-abort");
+        if (abortBtn) abortBtn.classList.remove("hidden");
+    }
     
     localTimerStartMs = Date.now(); 
     startTimers(); 
 
+    // Auto-abort if no moves are played
     autoAbortTimer = setTimeout(() => {
         if (moveCounter === 1) sendAction("ABORT", true); 
     }, 10000); 
 }
 
+// ==========================================
+// NEW: CUSTOM PROMISE-BASED CONFIRMATION
+// ==========================================
+function showConfirmModal(title, message) {
+    return new Promise((resolve) => {
+        const modal = document.getElementById("confirm-modal");
+        document.getElementById("confirm-title").innerText = title;
+        document.getElementById("confirm-message").innerText = message;
+        
+        const btnYes = document.getElementById("btn-confirm-yes");
+        const btnNo = document.getElementById("btn-confirm-no");
+
+        // When a button is clicked, hide the modal and resolve the promise!
+        btnYes.onclick = () => { modal.classList.add("hidden"); resolve(true); };
+        btnNo.onclick = () => { modal.classList.add("hidden"); resolve(false); };
+
+        modal.classList.remove("hidden");
+    });
+}
+
+// Updated Action Function
 async function sendAction(actionType, skipConfirmation = false) {
     if (myColor === "SPECTATOR") return;
+    
     if (!skipConfirmation) {
-        const actionWord = actionType === "RESIGN" ? "resign" : "abort the game";
-        if (!window.confirm(`Are you sure you want to ${actionWord}?`)) return;
+        const actionWord = actionType === "RESIGN" ? "Resign" : "Abort";
+        const message = actionType === "RESIGN" 
+            ? "Are you sure you want to resign and concede the game?" 
+            : "Are you sure you want to abort this match?";
+            
+        // THE FIX: Use our new custom UI instead of window.confirm!
+        const confirmed = await showConfirmModal(`${actionWord} Game?`, message);
+        
+        // If they clicked "Cancel", stop right here
+        if (!confirmed) return;
     }
+    
     await fetch(`${SERVER_URL}/action?action=${actionType}&color=${myColor}`);
 }
 
@@ -187,13 +201,11 @@ function executeLiveMoveUpdate(data) {
         clearTimeout(autoAbortTimer);
         autoAbortTimer = null;
     }
+
     if (moveCounter === 2) {
         autoAbortTimer = setTimeout(() => {
             if (moveCounter === 2) sendAction("ABORT", true);
         }, 10000);
-    } else if (moveCounter > 2) {
-        autoAbortTimer = null;
-        document.getElementById("btn-abort").classList.add("hidden"); 
     }
 
     if (data.whiteTime !== undefined && data.blackTime !== undefined) {
@@ -204,7 +216,6 @@ function executeLiveMoveUpdate(data) {
         startTimers(); 
     }
 
-    // Check if it's a capture BEFORE we update the board history!
     const previousGrid = boardHistory[currentViewIndex];
     const isCapture = previousGrid[data.endX][data.endY] !== "";
 
@@ -217,20 +228,12 @@ function executeLiveMoveUpdate(data) {
     highlightKingInCheck();
     updateMaterial(data.grid);
 
-    // PLAY SOUND EFFECTS!
-    if (data.status.includes("MATE") || data.status.includes("DRAW") || data.status.includes("RESIGN") || data.status.includes("ABORT") || data.status.includes("TIME")) {
-        sfxEnd.play().catch(e => console.log("Audio blocked"));
-    } else if (data.status.includes("CHECK")) {
-        sfxCheck.play().catch(e => console.log("Audio blocked"));
-    } else if (isCapture) {
-        sfxCapture.play().catch(e => console.log("Audio blocked"));
-    } else {
-        sfxMove.play().catch(e => console.log("Audio blocked"));
-    }
+    if (data.status.includes("CHECKMATE")) sfxWin.play().catch(e => console.log("Audio blocked"));
+    else if (data.status.includes("DRAW") || data.status.includes("RESIGN") || data.status.includes("ABORT") || data.status.includes("TIME")) sfxEnd.play().catch(e => console.log("Audio blocked"));
+    else if (data.status.includes("CHECK")) sfxCheck.play().catch(e => console.log("Audio blocked"));
+    else if (isCapture) sfxCapture.play().catch(e => console.log("Audio blocked"));
+    else sfxMove.play().catch(e => console.log("Audio blocked"));
 
-    // ==========================================
-    // THE FIX: SMART CONTROLS & STUTTER-FREE POPUPS
-    // ==========================================
     const statusUpper = data.status.toUpperCase();
     const isGameOver = statusUpper.includes("MATE") || statusUpper.includes("DRAW") || statusUpper.includes("RESIGN") || statusUpper.includes("ABORT") || statusUpper.includes("TIME");
 
@@ -242,7 +245,6 @@ function executeLiveMoveUpdate(data) {
         clearInterval(timerInterval);
         if (matchControls) matchControls.classList.add("hidden");
         
-        // Smart Formatter Titles
         let overlayTitle = "Game Over";
         if (statusUpper.includes("TIME")) overlayTitle = "TIME OUT";
         else if (statusUpper.includes("ABORT")) overlayTitle = "MATCH ABORTED";
@@ -250,37 +252,24 @@ function executeLiveMoveUpdate(data) {
         else if (statusUpper.includes("DRAW")) overlayTitle = "DRAW";
         else if (statusUpper.includes("RESIGN")) overlayTitle = "RESIGNATION";
 
-        // Clean up the server message so it never stutters!
         let cleanMessage = data.status
             .replace(/RESIGNATION!?/ig, "")
             .replace(/CHECKMATE!?/ig, "")
             .replace(/TIME OUT!?/ig, "")
-            .replace(/MATCH ABORTED!?/ig, "") // <-- Stops the Abort stutter!
-            .replace(/ABORTED!?/ig, "")      // <-- Catches alternate server spellings
+            .replace(/MATCH ABORTED!?/ig, "") 
+            .replace(/ABORTED!?/ig, "")      
             .trim();
 
-        // Show the perfectly formatted popup instantly
         displayOverlay(`${overlayTitle}<br>${cleanMessage}`, true);
-
     } else {
-        // GAME IS ACTIVE: Ensure the correct buttons are visible!
-        if (matchControls && myColor !== "SPECTATOR") {
-            matchControls.classList.remove("hidden");
-        }
+        if (matchControls && myColor !== "SPECTATOR") matchControls.classList.remove("hidden");
         
-        // The Abort button should only exist for the first 2 moves
         if (abortBtn) {
-            if (moveCounter > 2) {
-                abortBtn.classList.add("hidden");
-            } else {
-                abortBtn.classList.remove("hidden");
-            }
+            if (moveCounter <= 2) abortBtn.classList.remove("hidden");
+            else abortBtn.classList.add("hidden");
         }
         
-        // Paint the check square if needed
-        if (statusUpper.includes("CHECK")) {
-            highlightKingInCheck();
-        }
+        if (statusUpper.includes("CHECK")) highlightKingInCheck();
     }
 }
 
@@ -296,8 +285,6 @@ function executeLocalReset() {
     boardHistory = [];
     currentViewIndex = -1;
     matchStarted = false;
-    
-    // Clear highlights on reset
     lastPlayedMove = null; 
 
     serverWhiteTimeMs = 600000;
@@ -317,6 +304,7 @@ function executeLocalReset() {
 async function leaveTable() {
     localStorage.removeItem("chessToken"); 
     await fetch(`${SERVER_URL}/leave`); 
+    window.location.reload();
 }
 
 async function resetGame() { await fetch(`${SERVER_URL}/reset`); }
@@ -374,7 +362,6 @@ async function fetchBoard() {
         boardHistory = [INITIAL_BOARD]; 
         
         if (data.moveHistory && data.moveHistory.length > 0) {
-            // --- NEW: Grab the very last move from history to highlight on refresh ---
             const lastMove = data.moveHistory[data.moveHistory.length - 1];
             lastPlayedMove = { startX: lastMove.startX, startY: lastMove.startY, endX: lastMove.endX, endY: lastMove.endY };
 
@@ -391,20 +378,11 @@ async function fetchBoard() {
         currentViewIndex = boardHistory.length - 1;
         
         updateStatusUI(lastKnownStatus);
-        
-        // 1. Draw the board
         drawBoard(data.grid);
-
-        // 2. Immediately paint the highlights!
         highlightLastMoveSquares();
         highlightKingInCheck();
-
         updateMaterial(data.grid);
-        highlightKingInCheck(); 
 
-        // ==========================================
-        // THE FIX: REFRESHING A FINISHED GAME
-        // ==========================================
         const statusUpper = lastKnownStatus.toUpperCase();
         const isGameOver = statusUpper.includes("MATE") || statusUpper.includes("DRAW") || statusUpper.includes("RESIGN") || statusUpper.includes("ABORT") || statusUpper.includes("TIME");
 
@@ -414,7 +392,6 @@ async function fetchBoard() {
             const matchControls = document.getElementById("match-controls");
             if (matchControls) matchControls.classList.add("hidden");
             
-            // Use the same Smart Formatter for the refresh screen!
             let overlayTitle = "Game Over";
             if (statusUpper.includes("TIME")) overlayTitle = "TIME OUT";
             else if (statusUpper.includes("ABORT")) overlayTitle = "MATCH ABORTED";
@@ -422,37 +399,55 @@ async function fetchBoard() {
             else if (statusUpper.includes("DRAW")) overlayTitle = "DRAW";
             else if (statusUpper.includes("RESIGN")) overlayTitle = "RESIGNATION";
 
-            // Clean up the server message so it doesn't stutter on refresh!
             let cleanMessage = lastKnownStatus
                 .replace(/RESIGNATION!?/ig, "")
                 .replace(/CHECKMATE!?/ig, "")
                 .replace(/TIME OUT!?/ig, "")
-                .replace(/MATCH ABORTED!?/ig, "") // <-- Added to fetchBoard
-                .replace(/ABORTED!?/ig, "")       // <-- Added to fetchBoard
+                .replace(/MATCH ABORTED!?/ig, "") 
+                .replace(/ABORTED!?/ig, "")      
                 .trim();
 
             displayOverlay(`${overlayTitle}<br>${cleanMessage}`, true);
         } else {
-            // Game is still active!
-            if (moveCounter > 1) startTimers();
+            // THE FIX: Unconditionally sync timers and UI controls if game is active
+            if (data.whiteTime !== undefined && data.blackTime !== undefined) {
+                serverWhiteTimeMs = data.whiteTime;
+                serverBlackTimeMs = data.blackTime;
+                localTimerStartMs = Date.now(); 
+                updateClockUI();
+            }
+
+            clearInterval(timerInterval);
             
-            if (data.matchStarted && myColor !== "SPECTATOR") {
-                matchStarted = true;
-                hideOverlay(); 
+            // Start the timers visually IF the match is flagged as started by the server
+            if (data.matchStarted) {
+                startTimers();
+            }
+
+            if (myColor !== "SPECTATOR") { 
+                matchStarted = data.matchStarted;
+                
+                if (matchStarted) hideOverlay(); 
+                
                 const matchControls = document.getElementById("match-controls");
+                const abortBtn = document.getElementById("btn-abort");
+
                 if (matchControls) matchControls.classList.remove("hidden");
                 
-                if (moveCounter > 2) {
-                    const abortBtn = document.getElementById("btn-abort");
-                    if (abortBtn) abortBtn.classList.add("hidden");
+                if (abortBtn) {
+                    if (moveCounter <= 2) abortBtn.classList.remove("hidden"); 
+                    else abortBtn.classList.add("hidden");
                 }
             }
+            
+            if (statusUpper.includes("CHECK")) highlightKingInCheck();
         }
     } catch (error) {
         console.log("Fetch error:", error);
     }
 }
-// NEW: THEME SWITCHER LOGIC
+
+// THEME SWITCHER LOGIC
 const themes = {
     wood: { light: "#f0d9b5", dark: "#b58863", highlight: "rgba(255, 170, 0, 0.45)" },
     ocean: { light: "#dee3e6", dark: "#8ca2ad", highlight: "rgba(52, 152, 219, 0.5)" },
@@ -460,9 +455,7 @@ const themes = {
 };
 
 function changeTheme(themeName) {
-    // If no theme is passed, default to wood
     if (!themeName) themeName = "wood";
-    
     const theme = themes[themeName];
     if (!theme) return;
 
@@ -471,19 +464,13 @@ function changeTheme(themeName) {
     document.documentElement.style.setProperty('--highlight-color', theme.highlight);
 
     localStorage.setItem("chessTheme", themeName);
-
-    // NEW: Update the Swatch UI to show which one is active
     document.querySelectorAll('.swatch').forEach(btn => btn.classList.remove('active'));
     const activeBtn = document.querySelector(`.swatch.${themeName}`);
     if (activeBtn) activeBtn.classList.add('active');
 }
-
-// Call this at the very end of your app.js init() function!
 changeTheme(localStorage.getItem("chessTheme") || "wood");
 
-// --- NEW: HIGHLIGHT PAINTER FUNCTION ---
 function highlightLastMoveSquares() {
-    // Only show highlights if we are looking at the live board
     if (currentViewIndex === boardHistory.length - 1 && lastPlayedMove) {
         const startSquare = document.getElementById(`square-${lastPlayedMove.startX}-${lastPlayedMove.startY}`);
         const endSquare = document.getElementById(`square-${lastPlayedMove.endX}-${lastPlayedMove.endY}`);
@@ -492,9 +479,7 @@ function highlightLastMoveSquares() {
         if (endSquare) {
             endSquare.classList.add('last-move-highlight');
             const movedPiece = endSquare.querySelector('.piece-symbol');
-            if (movedPiece) {
-                movedPiece.classList.add('animate-drop');
-            }
+            if (movedPiece) movedPiece.classList.add('animate-drop');
         }
     }
 }
@@ -505,7 +490,7 @@ function drawBoard(grid) {
 
     let rows = [7, 6, 5, 4, 3, 2, 1, 0];
     let cols = [0, 1, 2, 3, 4, 5, 6, 7];
-    const fileNames = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']; // Letters for the columns
+    const fileNames = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
 
     if (myColor === "BLACK") {
         rows.reverse();
@@ -517,7 +502,7 @@ function drawBoard(grid) {
             const square = document.createElement("div");
             square.className = `square ${(row + col) % 2 === 0 ? 'dark' : 'light'}`;
             square.id = `square-${row}-${col}`;
-            square.style.position = "relative"; // Required to anchor our coordinates
+            square.style.position = "relative"; 
 
             const pieceCode = grid[row][col];
 
@@ -527,10 +512,6 @@ function drawBoard(grid) {
             square.addEventListener("drop", (e) => handleDrop(e, row, col));
             square.onclick = () => handleSquareClick(row, col, square, pieceCode);
 
-            // ==========================================
-            // NEW: DYNAMIC SMART COORDINATES
-            // ==========================================
-            // If this is the bottom-most row from the player's perspective, add the letter
             if (row === rows[7]) {
                 const fileLabel = document.createElement("span");
                 fileLabel.className = "coord-file";
@@ -538,7 +519,6 @@ function drawBoard(grid) {
                 square.appendChild(fileLabel);
             }
 
-            // If this is the left-most column from the player's perspective, add the number
             if (col === cols[0]) {
                 const rankLabel = document.createElement("span");
                 rankLabel.className = "coord-rank";
@@ -718,29 +698,16 @@ function logAlgebraicNotation(pieceCode, startX, startY, endX, endY, statusText,
     moveCounter++;
 }
 
-// ==========================================
-// THE FIX: BULLETPROOF CHECK PAINTER
-// ==========================================
 function highlightKingInCheck() {
-    // 1. Remove any old check squares
     document.querySelectorAll('.check-square').forEach(el => el.classList.remove('check-square'));
 
-    // 2. We ONLY care about the current live board status
     const upperText = lastKnownStatus.toUpperCase();
     if (!upperText.includes("CHECK")) return;
 
-    // 3. Figure out who is under attack
     let targetKing = "";
-    if (upperText.includes("CHECKMATE")) {
-        // If White wins, Black's King is dead.
-        targetKing = upperText.includes("WHITE") ? "bK" : "wK";
-    } else {
-        // If it's a regular check, the person whose turn it is, is under attack!
-        // e.g. "White's Turn (CHECK)" -> White King needs to be red.
-        targetKing = upperText.includes("WHITE") ? "wK" : "bK";
-    }
+    if (upperText.includes("CHECKMATE")) targetKing = upperText.includes("WHITE") ? "bK" : "wK";
+    else targetKing = upperText.includes("WHITE") ? "wK" : "bK";
 
-    // 4. Find the king on the CURRENT grid and paint it
     const currentGrid = boardHistory[currentViewIndex];
     for (let r = 0; r < 8; r++) {
         for (let c = 0; c < 8; c++) {
@@ -769,7 +736,7 @@ function displayOverlay(message, showReset = false) {
 function hideOverlay() { document.getElementById("overlay").classList.add("hidden"); }
 
 // ==========================================
-// 6. TIMERS & CLOCK LOGIC (DELTA TIME MATH)
+// 6. TIMERS & CLOCK LOGIC
 // ==========================================
 function startTimers() {
     clearInterval(timerInterval); 

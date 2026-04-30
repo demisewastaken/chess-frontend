@@ -294,14 +294,36 @@ button:hover { background-color: #4e6d8c; }
    ========================================== */
 .hidden { opacity: 0; pointer-events: none; display: none !important; }
 
+/* ==========================================
+   OVERLAY & POPUP FIXES
+   ========================================== */
 #overlay, #promotion-modal {
-    position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+    position: fixed; top: 0; left: 0; width: 100vw; 
+    height: 100dvh; /* THE FIX: dvh instead of vh for mobile URL bars */
     background-color: rgba(0, 0, 0, 0.7); backdrop-filter: blur(4px);
     display: flex; flex-direction: column; justify-content: center; align-items: center; 
     z-index: 1000; transition: opacity 0.3s;
+    
+    /* THE FIX: Invisible bumper so popups don't touch the screen edges */
+    padding: 20px; 
+    box-sizing: border-box;
 }
 
-#overlay-message { font-size: 60px; font-weight: bold; margin-bottom: 20px; color: #f1c40f; text-align: center;}
+#overlay-message { 
+    /* THE FIX: Scalable font size instead of a rigid 60px */
+    font-size: clamp(30px, 8vw, 60px); 
+    font-weight: bold; 
+    margin-bottom: 20px; 
+    color: #f1c40f; 
+    text-align: center;
+    
+    /* THE FIX: Force strict word-wrapping so text never bursts out of the screen */
+    width: auto;
+    max-width: 100%;
+    overflow-wrap: break-word; 
+    word-wrap: break-word;     
+    white-space: normal;  
+}
 
 .promotion-box {
     background-color: #ecf0f1; border-radius: 10px; padding: 20px;

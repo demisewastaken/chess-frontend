@@ -298,11 +298,14 @@ function executeLiveMoveUpdate(data) {
         if (statusUpper.includes("ABANDONED")) {
             const winner = statusUpper.includes("WHITE ABANDONED") ? "Black" : "White";
             cleanMessage = `${winner} wins!`;
+            const sfxEnd = new Audio('https://images.chesscomfiles.com/chess-themes/sounds/_MP3_/default/notify.mp3'); 
+            sfxEnd.play().catch(e => console.log("Audio play blocked by browser:", e));
         } else {
             cleanMessage = cleanMessage.trim();
         }
 
         displayOverlay(`${overlayTitle}<br>${cleanMessage}`, true);
+        return;
     } else {
         if (matchControls && myColor !== "SPECTATOR") matchControls.classList.remove("hidden");
         

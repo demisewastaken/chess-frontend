@@ -122,8 +122,12 @@ h1 { margin: 5px 0 15px 0; text-align: center; font-size: 24px; }
     height: 85%;
     object-fit: contain;
     cursor: grab; 
-    user-select: none;
-    /* We use 'filter: drop-shadow' instead of text-shadow for images! */
+    /* THE FIX: Stop mobile browsers from popping up the "Save Image" menus */
+    -webkit-touch-callout: none; 
+    -webkit-user-select: none;   
+    user-select: none;           
+    /* Prevents the default browser drag "ghost" from misbehaving on phones */
+    -webkit-user-drag: none;
     transition: transform 0.1s ease-in-out, filter 0.1s ease-in-out; 
 }
 

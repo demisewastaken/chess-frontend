@@ -142,7 +142,20 @@ h1 { margin: 5px 0 15px 0; text-align: center; font-size: 24px; }
     opacity: 1; 
 }
 
-.piece-symbol.dragging { opacity: 0.5; }
+.piece-symbol.dragging { 
+    transform: scale(1.15) translateY(-5px);
+    filter: drop-shadow(0px 15px 15px rgba(0,0,0,0.5));
+    z-index: 50;
+    opacity: 0.5; 
+}
+@media (hover: hover) and (pointer: fine) {
+    .piece-symbol:hover {
+        transform: scale(1.15) translateY(-5px);
+        filter: drop-shadow(0px 15px 15px rgba(0,0,0,0.5));
+        z-index: 50; 
+        opacity: 1; 
+    }
+}
 .piece-symbol:active { cursor: grabbing; }
 
 /* Styles the small pieces in the advantage bar */
@@ -151,7 +164,6 @@ h1 { margin: 5px 0 15px 0; text-align: center; font-size: 24px; }
     height: 24px;
     object-fit: contain;
 }
-
 
 /* ==========================================
    5. PLAYER INFO (Names, Clocks, Captures)
@@ -271,6 +283,7 @@ button:hover { background-color: #4e6d8c; }
     #chessboard {
         width: min(95vw, 55vh);
         height: min(95vw, 55vh);
+        position: relative;
     }
     
     #sidebar { 
@@ -411,3 +424,21 @@ button:hover { background-color: #4e6d8c; }
 
 .btn-cancel { background-color: #7f8c8d !important; flex: 1; border: 2px solid transparent !important; }
 .btn-cancel:hover { background-color: #95a5a6 !important; border-color: white !important; }
+
+/* ==========================================
+   INLINE DISCONNECT TIMERS
+   ========================================== */
+.disconnect-timer {
+    color: #ff4757; /* Bright, aggressive red */
+    font-size: 14px;
+    font-weight: bold;
+    margin-top: 5px;
+    letter-spacing: 0.5px;
+    
+    /* THE FIX: The flawless, continuous blinking animation */
+    animation: blinker 1s linear infinite;
+}
+
+@keyframes blinker {
+    50% { opacity: 0.2; }
+}

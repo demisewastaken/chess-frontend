@@ -55,6 +55,9 @@ let lastPlayedMove = null;
 let myColor = "SPECTATOR";
 let matchStarted = false; 
 let autoAbortTimer = null; 
+let isGameOverLock = false; 
+let disconnectInterval = null; // Holds the ticking loop
+let disconnectBanner = null;   // Holds the HTML element
 
 let serverWhiteTimeMs = 600000; 
 let serverBlackTimeMs = 600000;
@@ -136,7 +139,49 @@ function connectWebSocket() {
 
         stompClient.subscribe('/topic/game', function (message) {
             const data = JSON.parse(message.body);
+
+            // --- THE DISCONNECT TICKER LOGIC ---
+            if (data.type === "DISCONNECT_WARNING") {
+                let countdown = 60; 
+                
+                clearInterval(disconnectInterval);
+                disconnectInterval = setInterval(() => {
+                    countdown--;
+                    
+                    if (countdown <= 30 && countdown > 0) {
+                        // THE FIX: Dynamically target ONLY the player who dropped!
+                        const targetTimer = document.getElementById(`${data.color}-disconnect`);
+                        
+                        if (targetTimer) {
+                            targetTimer.classList.remove("hidden");
+                            targetTimer.innerHTML = `Disconnected!<br>Auto-resign in ${countdown}s`;
+                        }
+                    }
+                }, 1000); 
+                return; 
+            }
+
+            if (data.type === "RECONNECT_SUCCESS") {
+                clearInterval(disconnectInterval);
+                // THE FIX: Hide the specific player's timer when they return
+                const targetTimer = document.getElementById(`${data.color}-disconnect`);
+                if (targetTimer) {
+                    targetTimer.classList.add("hidden");
+                    targetTimer.innerText = "";
+                }
+                return; 
+            }
             
+            // IF THE GAME ENDS (Abandonment, Checkmate, etc.), kill the timer!
+            if (data.status && data.status.toUpperCase().includes("WINS")) {
+                clearInterval(disconnectInterval);
+                
+                // THE FIX: Hide both timers just to be safe when the game ends
+                const whiteTimer = document.getElementById("WHITE-disconnect");
+                const blackTimer = document.getElementById("BLACK-disconnect");
+                if (whiteTimer) whiteTimer.classList.add("hidden");
+                if (blackTimer) blackTimer.classList.add("hidden");
+            }
             if (data.type === "RESET") executeLocalReset();
             else if (data.type === "START") startOfficialMatch(); 
             else if (data.type === "MOVE") executeLiveMoveUpdate(data);
@@ -156,6 +201,7 @@ function connectWebSocket() {
 // 3. MATCH FLOW LOGIC
 // ==========================================
 function startOfficialMatch() {
+    isGameOverLock = false;
     matchStarted = true;
     hideOverlay();
     
@@ -246,17 +292,27 @@ function executeLiveMoveUpdate(data) {
 
     drawBoard(data.grid);
     highlightLastMoveSquares(); 
-    highlightKingInCheck();
     updateMaterial(data.grid);
-
-    if (data.status.includes("CHECKMATE")) sfxWin.play().catch(e => console.log("Audio blocked"));
-    else if (data.status.includes("DRAW") || data.status.includes("RESIGN") || data.status.includes("ABORT") || data.status.includes("TIME")) sfxEnd.play().catch(e => console.log("Audio blocked"));
-    else if (data.status.includes("CHECK")) sfxCheck.play().catch(e => console.log("Audio blocked"));
-    else if (isCapture) sfxCapture.play().catch(e => console.log("Audio blocked"));
-    else sfxMove.play().catch(e => console.log("Audio blocked"));
 
     const statusUpper = data.status.toUpperCase();
     const isGameOver = statusUpper.includes("MATE") || statusUpper.includes("DRAW") || statusUpper.includes("RESIGN") || statusUpper.includes("ABORT") || statusUpper.includes("TIME") || statusUpper.includes("ABANDONED");
+
+    // ==========================================
+    // THE AUDIO FIX: Cleaned up to never overlap!
+    // ==========================================
+    if (statusUpper.includes("CHECKMATE")) {
+        sfxWin.play().catch(e => console.log("Audio blocked"));
+    } else if (!isGameOver) {
+        // Only play standard move sounds if the game is still active!
+        if (statusUpper.includes("CHECK")) {
+            sfxCheck.play().catch(e => console.log("Audio blocked"));
+        } else if (isCapture) {
+            sfxCapture.play().catch(e => console.log("Audio blocked"));
+        } else if (data.pieceCode && data.pieceCode.trim() !== "") {
+            // The empty string check stops the ghost "grab" sound on abandonment!
+            sfxMove.play().catch(e => console.log("Audio blocked"));
+        }
+    }
 
     const matchControls = document.getElementById("match-controls");
     const abortBtn = document.getElementById("btn-abort");
@@ -264,7 +320,6 @@ function executeLiveMoveUpdate(data) {
     if (isGameOver) {
         matchStarted = false;
         clearInterval(timerInterval);
-        const matchControls = document.getElementById("match-controls");
         if (matchControls) matchControls.classList.add("hidden");
         
         let overlayTitle = "Game Over";
@@ -281,7 +336,6 @@ function executeLiveMoveUpdate(data) {
         } else if (statusUpper.includes("RESIGN")) {
             overlayTitle = "RESIGNATION";
         } else if (statusUpper.includes("ABANDONED")) {
-            // THE FIX: Smart Title based on who left!
             const leaver = statusUpper.includes("WHITE ABANDONED") ? "White" : "Black";
             overlayTitle = `${leaver} Abandoned!`;
         }
@@ -294,17 +348,22 @@ function executeLiveMoveUpdate(data) {
             .replace(/MATCH ABORTED!?/ig, "") 
             .replace(/ABORTED!?/ig, "");
             
-        // THE FIX: Override the message for Abandonment so there is no awkward punctuation
         if (statusUpper.includes("ABANDONED")) {
             const winner = statusUpper.includes("WHITE ABANDONED") ? "Black" : "White";
             cleanMessage = `${winner} wins!`;
-            const sfxEnd = new Audio('https://images.chesscomfiles.com/chess-themes/sounds/_MP3_/default/notify.mp3'); 
-            sfxEnd.play().catch(e => console.log("Audio play blocked by browser:", e));
         } else {
             cleanMessage = cleanMessage.trim();
         }
 
+        // THE FIX: Game Over sound is exclusively handled here, using the Global Lock
+        if (!isGameOverLock) {
+            sfxEnd.play().catch(e => console.log("Audio play blocked:", e));
+        }
+
         displayOverlay(`${overlayTitle}<br>${cleanMessage}`, true);
+        
+        // Lock the door so the background loop can't play the sound again!
+        isGameOverLock = true;
         return;
     } else {
         if (matchControls && myColor !== "SPECTATOR") matchControls.classList.remove("hidden");
@@ -319,6 +378,7 @@ function executeLiveMoveUpdate(data) {
 }
 
 function executeLocalReset() {
+    isGameOverLock = false;
     document.getElementById("match-controls").classList.add("hidden"); 
     clearInterval(timerInterval);
     if (autoAbortTimer) { clearTimeout(autoAbortTimer); autoAbortTimer = null; }
@@ -470,11 +530,20 @@ async function fetchBoard() {
             if (statusUpper.includes("ABANDONED")) {
                 const winner = statusUpper.includes("WHITE ABANDONED") ? "Black" : "White";
                 cleanMessage = `${winner} wins!`;
+
+                if (!isGameOverLock) {
+                sfxEnd.play().catch(e => console.log("Audio play blocked:", e));
+            }
             } else {
                 cleanMessage = cleanMessage.trim();
+                if (!isGameOverLock) {
+                sfxEnd.play().catch(e => console.log("Audio play blocked:", e));
+                }
             }
 
             displayOverlay(`${overlayTitle}<br>${cleanMessage}`, true);
+            isGameOverLock = true;
+            return;
         } else {
             // THE FIX: Unconditionally sync timers and UI controls if game is active
             if (data.whiteTime !== undefined && data.blackTime !== undefined) {

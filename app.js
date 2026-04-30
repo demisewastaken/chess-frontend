@@ -187,6 +187,11 @@ function connectWebSocket() {
             else if (data.type === "MOVE") executeLiveMoveUpdate(data);
             else if (data.type === "KICK") window.location.reload(); 
         });
+        setInterval(() => {
+            if (stompClient && stompClient.connected && myColor !== "SPECTATOR") {
+                stompClient.send("/app/register", {}, myColor);
+            }
+        }, 25000);
     }, function (error) {
         console.log("Connection lost! Attempting to reconnect...");
         document.getElementById("status").innerText = "⚠️ Reconnecting to server...";
@@ -339,12 +344,13 @@ function executeLiveMoveUpdate(data) {
             const leaver = statusUpper.includes("WHITE ABANDONED") ? "White" : "Black";
             overlayTitle = `${leaver} Abandoned!`;
         }
-
-        // Clean up the regular statuses
+        
         cleanMessage = cleanMessage
             .replace(/RESIGNATION!?/ig, "")
             .replace(/CHECKMATE!?/ig, "")
+            .replace(/TIME_OUT!?/ig, "")
             .replace(/TIME OUT!?/ig, "")
+            .replace(/TIMEOUT!?/ig, "")
             .replace(/MATCH ABORTED!?/ig, "") 
             .replace(/ABORTED!?/ig, "");
             
@@ -355,12 +361,12 @@ function executeLiveMoveUpdate(data) {
             cleanMessage = cleanMessage.trim();
         }
 
-        // THE FIX: Game Over sound is exclusively handled here, using the Global Lock
         if (!isGameOverLock) {
             sfxEnd.play().catch(e => console.log("Audio play blocked:", e));
         }
 
-        displayOverlay(`${overlayTitle}<br>${cleanMessage}`, true);
+        const finalDisplayText = cleanMessage === "" ? overlayTitle : `${overlayTitle}<br>${cleanMessage}`;
+        displayOverlay(finalDisplayText, true);
         
         // Lock the door so the background loop can't play the sound again!
         isGameOverLock = true;

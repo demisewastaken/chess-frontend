@@ -16,6 +16,22 @@ const pieceMap = {
     "bK": "♚", "bQ": "♛", "bR": "♜", "bB": "♝", "bN": "♞", "bP": "♟", 
     "": "" 
 };
+
+// NEW: Professional high-res SVG pieces
+const pieceImages = {
+    "wK": "https://upload.wikimedia.org/wikipedia/commons/4/42/Chess_klt45.svg",
+    "wQ": "https://upload.wikimedia.org/wikipedia/commons/1/15/Chess_qlt45.svg",
+    "wR": "https://upload.wikimedia.org/wikipedia/commons/7/72/Chess_rlt45.svg",
+    "wB": "https://upload.wikimedia.org/wikipedia/commons/b/b1/Chess_blt45.svg",
+    "wN": "https://upload.wikimedia.org/wikipedia/commons/7/70/Chess_nlt45.svg",
+    "wP": "https://upload.wikimedia.org/wikipedia/commons/4/45/Chess_plt45.svg",
+    "bK": "https://upload.wikimedia.org/wikipedia/commons/f/f0/Chess_kdt45.svg",
+    "bQ": "https://upload.wikimedia.org/wikipedia/commons/4/47/Chess_qdt45.svg",
+    "bR": "https://upload.wikimedia.org/wikipedia/commons/f/ff/Chess_rdt45.svg",
+    "bB": "https://upload.wikimedia.org/wikipedia/commons/9/98/Chess_bdt45.svg",
+    "bN": "https://upload.wikimedia.org/wikipedia/commons/e/ef/Chess_ndt45.svg",
+    "bP": "https://upload.wikimedia.org/wikipedia/commons/c/c7/Chess_pdt45.svg"
+};
 const pieceValues = { 'Q': 9, 'R': 5, 'B': 3, 'N': 3, 'P': 1, 'K': 0 };
 const INITIAL_BOARD = [
     ["bR", "bN", "bB", "bQ", "bK", "bB", "bN", "bR"],
@@ -527,12 +543,13 @@ function drawBoard(grid) {
             }
 
             if (pieceCode) {
-                const pieceSpan = document.createElement("span");
-                pieceSpan.className = `piece-symbol ${pieceCode[0] === 'w' ? 'white-piece' : 'black-piece'}`;
-                pieceSpan.innerText = pieceMap[pieceCode];
-                pieceSpan.draggable = true;
+                // THE FIX: Use <img> instead of <span>
+                const pieceImg = document.createElement("img");
+                pieceImg.className = "piece-symbol";
+                pieceImg.src = pieceImages[pieceCode]; // Load the SVG URL
+                pieceImg.draggable = true;
                 
-                pieceSpan.addEventListener("dragstart", (e) => {
+                pieceImg.addEventListener("dragstart", (e) => {
                     if (myColor === "SPECTATOR" || pieceCode[0] !== (myColor === "WHITE" ? 'w' : 'b')) {
                         e.preventDefault(); 
                         return;
@@ -540,12 +557,12 @@ function drawBoard(grid) {
                     if (currentViewIndex < boardHistory.length - 1) { e.preventDefault(); return; }
                     if (selectedSquare) { selectedSquare.div.classList.remove("selected"); selectedSquare = null; }
                     e.dataTransfer.setData("text/plain", JSON.stringify({ startX: row, startY: col, piece: pieceCode }));
-                    setTimeout(() => pieceSpan.classList.add("dragging"), 0);
+                    setTimeout(() => pieceImg.classList.add("dragging"), 0);
                     showValidMoves(row, col);
                 });
 
-                pieceSpan.addEventListener("dragend", () => pieceSpan.classList.remove("dragging"));
-                square.appendChild(pieceSpan);
+                pieceImg.addEventListener("dragend", () => pieceImg.classList.remove("dragging"));
+                square.appendChild(pieceImg);
             }
             boardDiv.appendChild(square);
         }
@@ -621,14 +638,18 @@ function renderCapturedPieces(containerId, pieces, advantage) {
     const sortOrder = { 'Q': 1, 'R': 2, 'B': 3, 'N': 4, 'P': 5 };
     pieces.sort((a, b) => sortOrder[a[1]] - sortOrder[b[1]]);
 
+    // THE FIX: This loop now creates <img> tags instead of <span> tags!
     pieces.forEach(p => {
-        const span = document.createElement("span"); span.innerText = pieceMap[p];
-        span.className = p[0] === 'w' ? 'captured-white' : 'captured-black';
-        container.appendChild(span);
+        const img = document.createElement("img"); 
+        img.src = pieceImages[p];
+        img.className = 'captured-piece'; 
+        container.appendChild(img);
     });
 
     if (advantage) {
-        const advSpan = document.createElement("span"); advSpan.className = "advantage-score"; advSpan.innerText = advantage;
+        const advSpan = document.createElement("span"); 
+        advSpan.className = "advantage-score"; 
+        advSpan.innerText = advantage;
         container.appendChild(advSpan);
     }
 }
@@ -664,9 +685,10 @@ function triggerPromotionUI(colorChar) {
     return new Promise((resolve) => {
         const modal = document.getElementById("promotion-modal"); const optionsDiv = document.getElementById("promotion-options"); optionsDiv.innerHTML = ""; 
         ["Q", "R", "B", "N"].forEach(type => {
-            const btn = document.createElement("div"); btn.className = "promo-choice";
-            const pieceCode = colorChar + type; btn.className += (colorChar === 'w') ? " white-piece" : " black-piece";
-            btn.innerText = pieceMap[pieceCode];
+            const pieceCode = colorChar + type; 
+            const btn = document.createElement("img"); 
+            btn.className = "promo-choice";
+            btn.src = pieceImages[pieceCode];
             btn.onclick = () => { modal.classList.add("hidden"); resolve(type); };
             optionsDiv.appendChild(btn);
         });

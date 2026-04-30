@@ -26,6 +26,7 @@ html, body {
     box-sizing: border-box;
     /* Adds safe padding so it doesn't hit the iPhone Notch */
     padding-top: env(safe-area-inset-top, 10px);
+    overflow-y: auto;
 }
 
 h1 { margin: 5px 0 15px 0; text-align: center; font-size: 24px; }
@@ -114,11 +115,16 @@ h1 { margin: 5px 0 15px 0; text-align: center; font-size: 24px; }
 .light .coord-rank, .light .coord-file { color: var(--dark-square); }
 
 /* ==========================================
-   4. PIECES
+   4. PIECES (SVG Images)
    ========================================== */
 .piece-symbol {
-    font-size: 65px; cursor: grab; user-select: none;
-    transition: transform 0.1s ease-in-out, text-shadow 0.1s ease-in-out;
+    width: 85%; /* Scales the image perfectly inside the square */
+    height: 85%;
+    object-fit: contain;
+    cursor: grab; 
+    user-select: none;
+    /* We use 'filter: drop-shadow' instead of text-shadow for images! */
+    transition: transform 0.1s ease-in-out, filter 0.1s ease-in-out; 
 }
 
 .animate-drop {
@@ -127,20 +133,21 @@ h1 { margin: 5px 0 15px 0; text-align: center; font-size: 24px; }
 
 .piece-symbol:hover, .piece-symbol.dragging {
     transform: scale(1.15) translateY(-5px);
-    text-shadow: 0px 15px 15px rgba(0,0,0,0.4);
-    z-index: 50; opacity: 1; /* Override dragging opacity if previously set */
+    filter: drop-shadow(0px 15px 15px rgba(0,0,0,0.5)); /* Adds a beautiful 3D shadow to the SVG */
+    z-index: 50; 
+    opacity: 1; 
 }
 
 .piece-symbol.dragging { opacity: 0.5; }
 .piece-symbol:active { cursor: grabbing; }
 
-@keyframes pieceDrop {
-    0% { transform: scale(0.5) translateY(-20px); opacity: 0; }
-    100% { transform: scale(1) translateY(0); opacity: 1; }
+/* Styles the small pieces in the advantage bar */
+.captured-piece {
+    width: 24px;
+    height: 24px;
+    object-fit: contain;
 }
 
-.white-piece { color: #ffffff; text-shadow: 0 0 1px black, 0 0 1px black, 0 0 1px black, 0 0 1px black; }
-.black-piece { color: #000000; }
 
 /* ==========================================
    5. PLAYER INFO (Names, Clocks, Captures)
@@ -252,12 +259,6 @@ button:hover { background-color: #4e6d8c; }
     #chessboard {
         width: min(95vw, 55vh);
         height: min(95vw, 55vh);
-    }
-    
-    /* THE FIX: Godzilla Piece Killer! 
-       Forces the font to scale down proportionally with the mobile board */
-    .piece-symbol {
-        font-size: min(11vw, 6.5vh); 
     }
     
     #sidebar { 

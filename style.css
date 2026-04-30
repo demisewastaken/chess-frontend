@@ -8,7 +8,7 @@
 }
 
 html, body {
-    height: 100vh; 
+    height: 100dvh; 
     width: 100vw;
     overflow: hidden; /* THE MAGIC BULLET: Forbids the page from scrolling */
     margin: 0;
@@ -19,11 +19,13 @@ html, body {
 }
 
 .main-container {
-    height: 100vh;
+    height: 100dvh;
     display: flex;
     flex-direction: column;
     padding: 10px;
     box-sizing: border-box;
+    /* Adds safe padding so it doesn't hit the iPhone Notch */
+    padding-top: env(safe-area-inset-top, 10px);
 }
 
 h1 { margin: 5px 0 15px 0; text-align: center; font-size: 24px; }
@@ -252,11 +254,25 @@ button:hover { background-color: #4e6d8c; }
         height: min(95vw, 55vh);
     }
     
-    #sidebar { width: min(95vw, 55vh); flex: 1; height: auto; padding: 10px; }
+    /* THE FIX: Godzilla Piece Killer! 
+       Forces the font to scale down proportionally with the mobile board */
+    .piece-symbol {
+        font-size: min(11vw, 6.5vh); 
+    }
+    
+    #sidebar { 
+        width: min(95vw, 55vh); 
+        flex: 1; 
+        /* THE FIX: Stops the sidebar from crushing the bottom text! */
+        min-height: 0; 
+        padding: 10px; 
+        display: flex;
+        flex-direction: column;
+    }
+    
     #sidebar h3 { margin-bottom: 5px; font-size: 16px; padding-bottom: 5px;}
     .sidebar-settings { margin-top: 10px; padding-top: 10px; }
 }
-
 /* ==========================================
    8. OVERLAYS, MODALS & LOADING
    ========================================== */
@@ -319,10 +335,12 @@ button:hover { background-color: #4e6d8c; }
 #status {  /* <-- Change this if your HTML ID is different! */
     text-align: center;
     align-self: center; /* This forces it to the middle of the Flexbox */
-    font-size: 20px;
+    font-size: clamp(16px, 4vw, 20px); 
     font-weight: bold;
-    margin-top: 15px;
+    margin-top: 10px;
+    margin-bottom: env(safe-area-inset-bottom, 10px); /* Prevents hitting the iPhone home bar */
     width: 100%;
+    z-index: 10;
 }
 
 /* ==========================================

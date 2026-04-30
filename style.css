@@ -252,7 +252,15 @@ button:hover { background-color: #4e6d8c; }
    7. MOBILE VIEW (The Stack)
    ========================================== */
 @media (max-width: 800px) {
-    .game-layout { flex-direction: column; justify-content: flex-start; gap: 10px; }
+    .game-layout { 
+        flex-direction: column; 
+        justify-content: flex-start; 
+        gap: 15px; 
+        
+        /* THE FIX 1: Stop forcing the layout to squeeze into the screen */
+        flex: none; 
+        height: auto;
+    }
     
     .left-column { width: min(95vw, 55vh); }
 
@@ -263,12 +271,19 @@ button:hover { background-color: #4e6d8c; }
     
     #sidebar { 
         width: min(95vw, 55vh); 
-        flex: 1; 
-        /* THE FIX: Stops the sidebar from crushing the bottom text! */
-        min-height: 0; 
-        padding: 10px; 
+        
+        /* THE FIX 2: Let the sidebar take up natural space and push the status text down */
+        flex: none; 
+        height: auto; 
+        padding: 15px; 
         display: flex;
         flex-direction: column;
+    }
+
+    #move-log {
+        /* THE FIX 3: Give the log a rigid height on mobile so it scrolls cleanly inside its own box */
+        min-height: 120px;
+        max-height: 150px;
     }
     
     #sidebar h3 { margin-bottom: 5px; font-size: 16px; padding-bottom: 5px;}

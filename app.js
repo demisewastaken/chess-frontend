@@ -129,6 +129,11 @@ function connectWebSocket() {
     stompClient.heartbeat.incoming = 20000; 
 
     stompClient.connect({}, function (frame) {
+        // THE FIX: Immediately tell the server who we are so it can cancel any countdown timers!
+        if (myColor !== "SPECTATOR") {
+            stompClient.send("/app/register", {}, myColor);
+        }
+
         stompClient.subscribe('/topic/game', function (message) {
             const data = JSON.parse(message.body);
             
@@ -251,7 +256,7 @@ function executeLiveMoveUpdate(data) {
     else sfxMove.play().catch(e => console.log("Audio blocked"));
 
     const statusUpper = data.status.toUpperCase();
-    const isGameOver = statusUpper.includes("MATE") || statusUpper.includes("DRAW") || statusUpper.includes("RESIGN") || statusUpper.includes("ABORT") || statusUpper.includes("TIME");
+    const isGameOver = statusUpper.includes("MATE") || statusUpper.includes("DRAW") || statusUpper.includes("RESIGN") || statusUpper.includes("ABORT") || statusUpper.includes("TIME") || statusUpper.includes("ABANDONED");
 
     const matchControls = document.getElementById("match-controls");
     const abortBtn = document.getElementById("btn-abort");
@@ -259,22 +264,43 @@ function executeLiveMoveUpdate(data) {
     if (isGameOver) {
         matchStarted = false;
         clearInterval(timerInterval);
+        const matchControls = document.getElementById("match-controls");
         if (matchControls) matchControls.classList.add("hidden");
         
         let overlayTitle = "Game Over";
-        if (statusUpper.includes("TIME")) overlayTitle = "TIME OUT";
-        else if (statusUpper.includes("ABORT")) overlayTitle = "MATCH ABORTED";
-        else if (statusUpper.includes("CHECKMATE")) overlayTitle = "CHECKMATE";
-        else if (statusUpper.includes("DRAW")) overlayTitle = "DRAW";
-        else if (statusUpper.includes("RESIGN")) overlayTitle = "RESIGNATION";
+        let cleanMessage = data.status; 
 
-        let cleanMessage = data.status
+        if (statusUpper.includes("TIME")) {
+            overlayTitle = "TIME OUT";
+        } else if (statusUpper.includes("ABORT")) {
+            overlayTitle = "MATCH ABORTED";
+        } else if (statusUpper.includes("CHECKMATE")) {
+            overlayTitle = "CHECKMATE";
+        } else if (statusUpper.includes("DRAW")) {
+            overlayTitle = "DRAW";
+        } else if (statusUpper.includes("RESIGN")) {
+            overlayTitle = "RESIGNATION";
+        } else if (statusUpper.includes("ABANDONED")) {
+            // THE FIX: Smart Title based on who left!
+            const leaver = statusUpper.includes("WHITE ABANDONED") ? "White" : "Black";
+            overlayTitle = `${leaver} Abandoned!`;
+        }
+
+        // Clean up the regular statuses
+        cleanMessage = cleanMessage
             .replace(/RESIGNATION!?/ig, "")
             .replace(/CHECKMATE!?/ig, "")
             .replace(/TIME OUT!?/ig, "")
             .replace(/MATCH ABORTED!?/ig, "") 
-            .replace(/ABORTED!?/ig, "")      
-            .trim();
+            .replace(/ABORTED!?/ig, "");
+            
+        // THE FIX: Override the message for Abandonment so there is no awkward punctuation
+        if (statusUpper.includes("ABANDONED")) {
+            const winner = statusUpper.includes("WHITE ABANDONED") ? "Black" : "White";
+            cleanMessage = `${winner} wins!`;
+        } else {
+            cleanMessage = cleanMessage.trim();
+        }
 
         displayOverlay(`${overlayTitle}<br>${cleanMessage}`, true);
     } else {
@@ -319,7 +345,9 @@ function executeLocalReset() {
 
 async function leaveTable() {
     localStorage.removeItem("chessToken"); 
-    await fetch(`${SERVER_URL}/leave`); 
+    if (myColor === "WHITE" || myColor === "BLACK") {
+        await fetch(`${SERVER_URL}/leave`); 
+    }
     window.location.reload();
 }
 
@@ -400,7 +428,7 @@ async function fetchBoard() {
         updateMaterial(data.grid);
 
         const statusUpper = lastKnownStatus.toUpperCase();
-        const isGameOver = statusUpper.includes("MATE") || statusUpper.includes("DRAW") || statusUpper.includes("RESIGN") || statusUpper.includes("ABORT") || statusUpper.includes("TIME");
+        const isGameOver = statusUpper.includes("MATE") || statusUpper.includes("DRAW") || statusUpper.includes("RESIGN") || statusUpper.includes("ABORT") || statusUpper.includes("TIME") || statusUpper.includes("ABANDONED");
 
         if (isGameOver) {
             matchStarted = false;
@@ -409,19 +437,39 @@ async function fetchBoard() {
             if (matchControls) matchControls.classList.add("hidden");
             
             let overlayTitle = "Game Over";
-            if (statusUpper.includes("TIME")) overlayTitle = "TIME OUT";
-            else if (statusUpper.includes("ABORT")) overlayTitle = "MATCH ABORTED";
-            else if (statusUpper.includes("CHECKMATE")) overlayTitle = "CHECKMATE";
-            else if (statusUpper.includes("DRAW")) overlayTitle = "DRAW";
-            else if (statusUpper.includes("RESIGN")) overlayTitle = "RESIGNATION";
+            let cleanMessage = lastKnownStatus; 
 
-            let cleanMessage = lastKnownStatus
+            if (statusUpper.includes("TIME")) {
+                overlayTitle = "TIME OUT";
+            } else if (statusUpper.includes("ABORT")) {
+                overlayTitle = "MATCH ABORTED";
+            } else if (statusUpper.includes("CHECKMATE")) {
+                overlayTitle = "CHECKMATE";
+            } else if (statusUpper.includes("DRAW")) {
+                overlayTitle = "DRAW";
+            } else if (statusUpper.includes("RESIGN")) {
+                overlayTitle = "RESIGNATION";
+            } else if (statusUpper.includes("ABANDONED")) {
+                // THE FIX: Smart Title based on who left!
+                const leaver = statusUpper.includes("WHITE ABANDONED") ? "White" : "Black";
+                overlayTitle = `${leaver} Abandoned!`;
+            }
+
+            // Clean up the regular statuses
+            cleanMessage = cleanMessage
                 .replace(/RESIGNATION!?/ig, "")
                 .replace(/CHECKMATE!?/ig, "")
                 .replace(/TIME OUT!?/ig, "")
                 .replace(/MATCH ABORTED!?/ig, "") 
-                .replace(/ABORTED!?/ig, "")      
-                .trim();
+                .replace(/ABORTED!?/ig, "");
+                
+            // THE FIX: Override the message for Abandonment so there is no awkward punctuation
+            if (statusUpper.includes("ABANDONED")) {
+                const winner = statusUpper.includes("WHITE ABANDONED") ? "Black" : "White";
+                cleanMessage = `${winner} wins!`;
+            } else {
+                cleanMessage = cleanMessage.trim();
+            }
 
             displayOverlay(`${overlayTitle}<br>${cleanMessage}`, true);
         } else {

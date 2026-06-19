@@ -161,6 +161,24 @@ function connectWebSocket() {
                 return; 
             }
 
+            // --- IN-GAME CHAT LOGIC ---
+            if (data.type === "CHAT") {
+                const msgDiv = document.createElement("div");
+                
+                // Determine if this bubble belongs on the left (them) or right (you)
+                const isSelf = data.sender.toUpperCase() === myColor.toUpperCase();
+                msgDiv.className = `chat-msg ${isSelf ? 'self' : 'opponent'}`;
+                
+                // CRITICAL: Always use innerText for user chat to prevent HTML/XSS hacking!
+                msgDiv.innerText = data.message; 
+                
+                chatMessages.appendChild(msgDiv);
+                
+                // Auto-scroll to the newest message
+                chatMessages.scrollTop = chatMessages.scrollHeight; 
+                return;
+            }
+
             if (data.type === "RECONNECT_SUCCESS") {
                 clearInterval(disconnectInterval);
                 // THE FIX: Hide the specific player's timer when they return
@@ -274,18 +292,24 @@ function executeLiveMoveUpdate(data) {
         autoAbortTimer = null;
     }
 
-    if (moveCounter === 2) {
-        autoAbortTimer = setTimeout(() => {
-            if (moveCounter === 2) sendAction("ABORT", true);
-        }, 10000);
-    }
-
     if (data.whiteTime !== undefined && data.blackTime !== undefined) {
         serverWhiteTimeMs = data.whiteTime;
         serverBlackTimeMs = data.blackTime;
         localTimerStartMs = Date.now(); 
         updateClockUI(); 
-        startTimers(); 
+        
+        // THE FIX: Check the exact status BEFORE we allow the clock to tick!
+        const currentStatus = data.status ? data.status.toUpperCase() : "";
+        const gameIsDead = currentStatus.includes("MATE") || currentStatus.includes("DRAW") || 
+                           currentStatus.includes("RESIGN") || currentStatus.includes("ABORT") || 
+                           currentStatus.includes("TIME") || currentStatus.includes("ABANDONED");
+        
+        if (!gameIsDead) {
+            startTimers(); 
+        } else {
+            // Guarantee the clock stays frozen!
+            if (typeof timerInterval !== 'undefined') clearInterval(timerInterval);
+        }
     }
 
     const previousGrid = boardHistory[currentViewIndex];
@@ -302,9 +326,39 @@ function executeLiveMoveUpdate(data) {
     const statusUpper = data.status.toUpperCase();
     const isGameOver = statusUpper.includes("MATE") || statusUpper.includes("DRAW") || statusUpper.includes("RESIGN") || statusUpper.includes("ABORT") || statusUpper.includes("TIME") || statusUpper.includes("ABANDONED");
 
-    // ==========================================
+    // 1. Always clear the abort timer the moment ANY move is played
+    if (typeof autoAbortTimer !== 'undefined' && autoAbortTimer) {
+        clearTimeout(autoAbortTimer);
+        autoAbortTimer = null;
+        // console.log("🛑 Abort timer cleared because a move was played.");
+    }
+
+    // THE FIX: Rely strictly on boardHistory length, not moveCounter!
+    // If length is exactly 2, it means ONLY White has played their first move.
+    if (boardHistory.length === 2) {
+        // console.log("⏱️ White played Move 1! Starting 10-second abort countdown for Black...");
+        
+        autoAbortTimer = setTimeout(() => {
+            // console.log("⏱️ 10 seconds finished! Checking if Black moved...");
+            
+            // If the length is STILL exactly 2, Black never moved!
+            if (boardHistory.length === 2) {
+                // console.log("🚨 Black failed to move in time.");
+                
+                // Only let White send the server command so they don't double-fire
+                if (myColor === "WHITE") {
+                    // console.log("📡 Sending ABORT signal to backend!");
+                    sendAction("ABORT", true);
+                } else {
+                    // console.log("🛡️ I am Black. Waiting for White to officially abort the match.");
+                }
+            } else {
+                // console.log("✅ Black made a move. Abort canceled.");
+            }
+        }, 10000); // 10 seconds
+    }
     // THE AUDIO FIX: Cleaned up to never overlap!
-    // ==========================================
+
     if (statusUpper.includes("CHECKMATE")) {
         sfxWin.play().catch(e => console.log("Audio blocked"));
     } else if (!isGameOver) {
@@ -464,11 +518,24 @@ async function fetchBoard() {
         const data = await response.json();
         
         if (data.whiteTime !== undefined && data.blackTime !== undefined) {
-            serverWhiteTimeMs = data.whiteTime;
-            serverBlackTimeMs = data.blackTime;
-            localTimerStartMs = Date.now(); 
-            updateClockUI();
+        serverWhiteTimeMs = data.whiteTime;
+        serverBlackTimeMs = data.blackTime;
+        localTimerStartMs = Date.now(); 
+        updateClockUI(); 
+        
+        // THE FIX: Check the exact status BEFORE we allow the clock to tick!
+        const currentStatus = data.status ? data.status.toUpperCase() : "";
+        const gameIsDead = currentStatus.includes("MATE") || currentStatus.includes("DRAW") || 
+                           currentStatus.includes("RESIGN") || currentStatus.includes("ABORT") || 
+                           currentStatus.includes("TIME") || currentStatus.includes("ABANDONED");
+        
+        if (!gameIsDead) {
+            startTimers(); 
+        } else {
+            // Guarantee the clock stays frozen!
+            if (typeof timerInterval !== 'undefined') clearInterval(timerInterval);
         }
+    }
 
         document.getElementById("move-log").innerHTML = "";
         moveCounter = 1;
@@ -937,3 +1004,50 @@ function updateClockUI(wMs = serverWhiteTimeMs, bMs = serverBlackTimeMs) {
 document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") fetchBoard(); 
 });
+
+// ==========================================
+// CHAT & EMOJI LOGIC
+// ==========================================
+const chatInput = document.getElementById("chat-input");
+const chatSendBtn = document.getElementById("chat-send");
+const chatMessages = document.getElementById("chat-messages");
+const emojiToggle = document.getElementById("emoji-toggle");
+const emojiPicker = document.getElementById("emoji-picker");
+
+// 1. Toggle the emoji box
+if (emojiToggle) {
+    emojiToggle.addEventListener("click", () => emojiPicker.classList.toggle("hidden"));
+}
+
+// 2. Click an emoji to add it to the input field
+document.querySelectorAll(".emoji").forEach(el => {
+    el.addEventListener("click", (e) => {
+        chatInput.value += e.target.innerText;
+        emojiPicker.classList.add("hidden");
+        chatInput.focus();
+    });
+});
+
+// 3. Send the message to the backend
+function sendChatMessage() {
+    const text = chatInput.value.trim();
+    if (text === "" || myColor === "SPECTATOR" || !matchStarted) return;
+    
+    const payload = {
+        sender: myColor, // "WHITE" or "BLACK"
+        message: text
+    };
+    
+    stompClient.send("/app/chat", {}, JSON.stringify(payload));
+    
+    chatInput.value = "";
+    emojiPicker.classList.add("hidden");
+}
+
+// 4. Trigger send on Click or 'Enter' key
+if (chatSendBtn) chatSendBtn.addEventListener("click", sendChatMessage);
+if (chatInput) {
+    chatInput.addEventListener("keypress", (e) => {
+        if (e.key === "Enter") sendChatMessage();
+    });
+}

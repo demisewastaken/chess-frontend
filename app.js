@@ -548,6 +548,22 @@ async function fetchBoard() {
             lastKnownStatus = "White's Turn";
         }
 
+        // Restore chat history from server
+        const chatMessagesDiv = document.getElementById("chat-messages");
+        if (chatMessagesDiv) {
+            chatMessagesDiv.innerHTML = ""; // Clear existing messages to avoid duplicates
+            if (isMatchActive && data.chatHistory && data.chatHistory.length > 0) {
+                data.chatHistory.forEach(chat => {
+                    // Use the same rendering logic as live messages
+                    const msgDiv = document.createElement("div");
+                    msgDiv.className = "chat-msg " + (chat.sender === myColor ? "self" : "opponent");
+                    msgDiv.innerText = chat.message;
+                    chatMessagesDiv.appendChild(msgDiv);
+                });
+                chatMessagesDiv.scrollTop = chatMessagesDiv.scrollHeight;
+            }
+        }
+
         // Ensure the last slot reflects the true current board
         boardHistory[boardHistory.length - 1] = data.grid;
         currentViewIndex = boardHistory.length - 1;

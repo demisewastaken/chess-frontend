@@ -1,0 +1,15 @@
+{
+  "name": "chess-frontend",
+  "version": "1.0.0",
+  "description": "Multiplayer Chess Frontend",
+  "scripts": {
+    "dev": "npx serve .",
+    "start": "npx serve .",
+    "test": "playwright test"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "playwright": "^1.63.0",
+    "serve": "^14.2.0"
+  }
+}

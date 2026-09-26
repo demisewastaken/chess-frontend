@@ -1,0 +1,142 @@
+ <!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Multiplayer Chess</title>
+    
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>♟️</text></svg>">
+    
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <canvas id="bg-canvas"></canvas>
+    <div id="loading-screen">
+        <div class="bouncing-pawn">♟️</div>
+        <h2 id="loading-text">Waking up the Chess Server...</h2>
+        <p style="color: #bdc3c7;">This might take up to 45 seconds on the first load.</p>
+    </div>
+    
+    <div class="main-container">
+        <header class="app-header">
+            <h1>DiChess</h1>
+            <button id="theme-toggle" class="theme-toggle" aria-label="Toggle light/dark mode" title="Toggle light/dark mode">
+                <span class="theme-icon-sun">☀️</span>
+                <span class="theme-icon-moon">🌙</span>
+            </button>
+        </header>
+        
+        <div class="game-layout">
+            <div class="left-column">
+            
+                <div class="player-info">
+                    <span class="player-name">Black</span>
+                    <div class="clock" id="black-clock">10:00</div>
+                    <div id="BLACK-disconnect" class="disconnect-timer hidden"></div>
+                    <div class="captured-area" id="captured-by-black"></div>
+                </div>
+
+                <div class="board-with-coords">
+                    <div id="board-area">
+                        <div id="chessboard"></div>
+                    </div>
+                </div>
+
+                <div class="player-info">
+                    <span class="player-name">White</span>
+                    <div class="clock" id="white-clock">10:00</div>
+                    <div id="WHITE-disconnect" class="disconnect-timer hidden"></div>
+                    <div class="captured-area" id="captured-by-white"></div>
+                </div>
+
+            </div>
+
+            <div id="sidebar">
+                <h3>Match History</h3>
+                <div id="move-log"></div>
+                
+                <div id="match-controls" class="hidden">
+                    <button id="btn-abort" onclick="sendAction('ABORT')">Abort Game</button>
+                    <button id="btn-resign" onclick="sendAction('RESIGN')">Resign</button>
+                </div>
+                
+                <div class="history-controls">
+                    <button onclick="viewFirst()" title="First Move">|&lt;</button>
+                    <button onclick="viewPrevious()" title="Previous Move">&lt;</button>
+                    <button onclick="viewNext()" title="Next Move">&gt;</button>
+                    <button onclick="viewLive()" title="Live Game">&gt;|</button>
+                </div>
+
+                <div class="sidebar-settings">
+                    <label style="font-size: 14px; font-weight: bold; color: #bdc3c7;">Board Theme:</label>
+                    <div class="theme-swatches" id="theme-swatches">
+                        <button class="swatch wood" onclick="changeTheme('wood')" title="Classic Wood"></button>
+                        <button class="swatch ocean" onclick="changeTheme('ocean')" title="Ocean Blue"></button>
+                        <button class="swatch midnight" onclick="changeTheme('midnight')" title="Midnight Purple"></button>
+                    </div>
+                </div>
+
+                <div id="chat-container" class="collapsed">
+                    <!-- Clickable header — always visible, toggles the body -->
+                    <div id="chat-header" onclick="toggleChat()">
+                        <span>💬 Chat <span id="chat-unread"></span></span>
+                        <span id="chat-toggle-icon">▶</span>
+                    </div>
+
+                    <!-- Body — hidden when collapsed -->
+                    <div id="chat-body">
+                        <div id="chat-messages">
+                            <div class="chat-msg system">Welcome to the chat!</div>
+                        </div>
+
+                        <div id="emoji-picker" class="hidden">
+                            <span class="emoji">😀</span><span class="emoji">😂</span><span class="emoji">😎</span><span class="emoji">😭</span>
+                            <span class="emoji">😡</span><span class="emoji">👍</span><span class="emoji">👎</span><span class="emoji">🔥</span>
+                            <span class="emoji">🎉</span><span class="emoji">💀</span><span class="emoji">👀</span><span class="emoji">🤝</span>
+                        </div>
+
+                        <div id="chat-input-area">
+                            <button id="emoji-toggle" title="Emojis">😀</button>
+                            <input type="text" id="chat-input" placeholder="Message opponent..." autocomplete="off">
+                            <button id="chat-send" title="Send">➤</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            </div>
+        </div>
+
+        <div class="controls">
+            <h3 id="status">White's Turn</h3>
+        </div>
+    </div>
+
+    <div id="promotion-modal" class="hidden">
+        <div class="promotion-box">
+            <h3>Promote Pawn</h3>
+            <div id="promotion-options" class="promotion-options"></div>
+        </div>
+    </div>
+
+    <div id="overlay" class="hidden">
+        <div id="overlay-message"></div>
+    </div>
+
+    <!-- NEW: Custom Confirmation Modal -->
+    <div id="confirm-modal" class="hidden">
+        <div class="confirm-box">
+            <h3 id="confirm-title">Are you sure?</h3>
+            <p id="confirm-message">Do you really want to do this?</p>
+            <div class="confirm-buttons">
+                <button id="btn-confirm-yes" class="btn-danger">Yes</button>
+                <button id="btn-confirm-no" class="btn-cancel">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/sockjs-client/1.6.1/sockjs.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/stomp.js/2.3.3/stomp.min.js"></script>
+
+    <script src="app.js"></script>
+</body>
+</html>

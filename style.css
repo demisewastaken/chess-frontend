@@ -647,6 +647,69 @@ button:hover {
 }
 .review-mode .square, .review-mode .piece-symbol { cursor: not-allowed !important; }
 
+/* Game End Panel in Sidebar */
+#game-end-panel {
+    margin-top: 16px;
+    padding: 16px;
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-md);
+    text-align: center;
+}
+
+#game-end-title {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--accent-primary);
+    margin-bottom: 8px;
+    text-shadow: 0 0 16px var(--accent-glow);
+}
+
+#game-end-message {
+    font-size: 1rem;
+    color: var(--text-secondary);
+    margin-bottom: 12px;
+    line-height: 1.5;
+}
+
+#game-end-actions {
+    display: flex;
+    justify-content: center;
+    gap: 12px;
+    margin-top: 12px;
+}
+
+#game-end-actions button {
+    padding: 10px 20px;
+    font-size: 0.875rem;
+    font-weight: 600;
+    cursor: pointer;
+    border: none;
+    border-radius: var(--radius-md);
+    transition: all var(--transition-fast);
+}
+
+#btn-rematch {
+    background: linear-gradient(135deg, var(--accent-secondary) 0%, #6d28d9 100%);
+    color: var(--text-on-accent);
+}
+
+#btn-rematch:hover {
+    box-shadow: var(--shadow-md), 0 0 0 1px rgba(168, 85, 247, 0.5), 0 0 20px rgba(168, 85, 247, 0.2);
+    transform: translateY(-1px);
+}
+
+#btn-leave-table {
+    background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+    color: white;
+}
+
+#btn-leave-table:hover {
+    box-shadow: var(--shadow-md), 0 0 0 1px rgba(239, 68, 68, 0.5), 0 0 20px rgba(239, 68, 68, 0.2);
+    transform: translateY(-1px);
+}
+
 /* Premium Theme Swatches */
 .sidebar-settings {
     margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border-subtle);

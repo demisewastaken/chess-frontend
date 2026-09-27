@@ -247,6 +247,7 @@ function startOfficialMatch(data) {
     isGameOverLock = false;
     matchStarted = true;
     hideOverlay();
+    document.getElementById("game-end-panel").classList.add("hidden");
 
     // Initialize the authoritative turn color from the server payload
     if (data && data.currentTurn) {
@@ -393,7 +394,7 @@ function executeLiveMoveUpdate(data) {
             isGameOverLock = true;
         }
 
-        displayOverlay(buildGameOverHTML(data.status), true);
+        showGameEndPanel(data.status);
         return;
     } else {
         if (matchControls && myColor !== "SPECTATOR") matchControls.classList.remove("hidden");
@@ -411,6 +412,7 @@ function executeLiveMoveUpdate(data) {
 function executeLocalReset() {
     isGameOverLock = false;
     document.getElementById("match-controls").classList.add("hidden");
+    document.getElementById("game-end-panel").classList.add("hidden");
     clearInterval(timerInterval);
     if (autoAbortTimer) { clearTimeout(autoAbortTimer); autoAbortTimer = null; }
 
@@ -588,7 +590,7 @@ async function fetchBoard() {
                 isGameOverLock = true;
             }
 
-            displayOverlay(buildGameOverHTML(lastKnownStatus), true);
+            showGameEndPanel(lastKnownStatus);
 
         } else {
             clearInterval(timerInterval);
@@ -669,6 +671,48 @@ function buildGameOverHTML(rawStatus) {
     }
 
     return cleanMessage === "" ? overlayTitle : `${overlayTitle}<br>${cleanMessage}`;
+}
+
+// Show game-end result in sidebar panel instead of full-screen overlay
+function showGameEndPanel(rawStatus) {
+    const statusUpper = rawStatus.toUpperCase();
+    let title = "Game Over";
+    let message = "";
+
+    if (statusUpper.includes("CHECKMATE")) {
+        title = "CHECKMATE";
+        const winner = statusUpper.includes("WHITE") ? "White" : "Black";
+        message = `${winner} wins!`;
+    } else if (statusUpper.includes("TIME")) {
+        title = "TIME OUT";
+        const winner = statusUpper.includes("WHITE") ? "White" : "Black";
+        message = `${winner} wins on time!`;
+    } else if (statusUpper.includes("ABORT")) {
+        title = "MATCH ABORTED";
+        message = "Game was aborted.";
+    } else if (statusUpper.includes("DRAW")) {
+        title = "DRAW";
+        message = "The game ended in a draw.";
+    } else if (statusUpper.includes("RESIGN")) {
+        title = "RESIGNATION";
+        const winner = statusUpper.includes("WHITE") ? "Black" : "White";
+        message = `${winner} wins by resignation!`;
+    } else if (statusUpper.includes("ABANDONED")) {
+        const leaver = statusUpper.includes("WHITE ABANDONED") ? "White" : "Black";
+        const winner = statusUpper.includes("WHITE ABANDONED") ? "Black" : "White";
+        title = `${leaver} Abandoned!`;
+        message = `${winner} wins!`;
+    } else {
+        message = rawStatus;
+    }
+
+    // Update sidebar panel
+    document.getElementById("game-end-title").innerText = title;
+    document.getElementById("game-end-message").innerText = message;
+    document.getElementById("game-end-panel").classList.remove("hidden");
+
+    // Hide full-screen overlay if visible
+    hideOverlay();
 }
 
 // THEME SWITCHER
@@ -825,6 +869,7 @@ function createPieceElement(pieceCode, row, col) {
             return;
         }
         if (currentViewIndex < boardHistory.length - 1) { e.preventDefault(); return; }
+        if (!matchStarted) { e.preventDefault(); return; }
         if (selectedSquare) { selectedSquare.div.classList.remove("selected"); selectedSquare = null; }
         // Read current position from element data attributes (updated on each move/redraw)
         const startX = parseInt(pieceImg.dataset.startX, 10);
@@ -839,8 +884,9 @@ function createPieceElement(pieceCode, row, col) {
 }
 
 function handleSquareClick(row, col, squareDiv) {
-    // Disable clicks when reviewing history
+    // Disable clicks when reviewing history or game has ended
     if (currentViewIndex < boardHistory.length - 1) return;
+    if (!matchStarted) return;
 
     // Read current piece from DOM (avoids stale closure values)
     const pieceImg = squareDiv.querySelector('.piece-symbol');
@@ -891,6 +937,7 @@ function handleDrop(e, endX, endY) {
     e.preventDefault();
     e.currentTarget.classList.remove("drag-over");
     if (currentViewIndex < boardHistory.length - 1) return;
+    if (!matchStarted) return;
     const dragData = JSON.parse(e.dataTransfer.getData("text/plain"));
     if (dragData.startX === endX && dragData.startY === endY) return;
     attemptMove(dragData.startX, dragData.startY, endX, endY, dragData.piece);
@@ -975,8 +1022,9 @@ function createArrowPath(startRow, startCol, endRow, endCol) {
 
 function handleArrowMouseDown(e) {
     if (e.button !== 2) return;
-    // Disable arrow drawing when reviewing history
+    // Disable arrow drawing when reviewing history or game has ended
     if (currentViewIndex < boardHistory.length - 1) return;
+    if (!matchStarted) return;
     const square = getSquareFromEvent(e);
     if (!square) return;
     if (square.element.querySelector(".piece-symbol") && matchStarted && currentViewIndex === boardHistory.length - 1) {
@@ -1123,10 +1171,10 @@ function viewLive() {
         updateTimelineUI();
     }
 
-    // Restore the game-over overlay for ALL terminal states
+    // Restore the game-over panel for ALL terminal states
     const statusUpper = lastKnownStatus.toUpperCase();
     if (isGameOverStatus(statusUpper)) {
-        displayOverlay(buildGameOverHTML(lastKnownStatus), true);
+        showGameEndPanel(lastKnownStatus);
     }
 }
 

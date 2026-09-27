@@ -67,6 +67,16 @@
                     <button onclick="viewLive()" title="Live Game">&gt;|</button>
                 </div>
 
+                <!-- Game End Panel - shown when game is over -->
+                <div id="game-end-panel" class="hidden">
+                    <h3 id="game-end-title">Game Over</h3>
+                    <div id="game-end-message"></div>
+                    <div id="game-end-actions" style="display: flex; gap: 12px; justify-content: center; margin-top: 16px;">
+                        <button id="btn-rematch" onclick="resetGame()" style="padding:10px 20px; font-size:16px; font-weight: 600; cursor:pointer; background: linear-gradient(135deg, #34495e 0%, #2c3e50 100%); color: var(--text-on-accent); border: none; border-radius: var(--radius-md);">Rematch</button>
+                        <button id="btn-leave-table" onclick="leaveTable()" style="padding:10px 20px; font-size:16px; font-weight: 600; cursor:pointer; background: linear-gradient(135deg, #c0392b 0%, #a93226 100%); color: white; border: none; border-radius: var(--radius-md);">Leave Table</button>
+                    </div>
+                </div>
+
                 <div class="sidebar-settings">
                     <label style="font-size: 14px; font-weight: bold; color: #bdc3c7;">Board Theme:</label>
                     <div class="theme-swatches" id="theme-swatches">

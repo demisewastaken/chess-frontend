@@ -948,6 +948,71 @@ button:hover {
 
 .confirm-buttons { display: flex; justify-content: center; gap: 12px; }
 
+/* Game End Notification Popup */
+.game-end-popup-box {
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-xl);
+    padding: 28px 40px;
+    box-shadow: var(--shadow-lg), var(--shadow-glow);
+    text-align: center;
+    color: var(--text-primary);
+    backdrop-filter: blur(var(--glass-blur));
+    animation: gameEndPopupIn 0.25s ease-out forwards;
+}
+
+.game-end-popup-box.fade-out {
+    animation: gameEndPopupOut 0.3s ease-in forwards;
+}
+
+@keyframes gameEndPopupIn {
+    from {
+        opacity: 0;
+        transform: translate(-50%, -50%) scale(0.9);
+    }
+    to {
+        opacity: 1;
+        transform: translate(-50%, -50%) scale(1);
+    }
+}
+
+@keyframes gameEndPopupOut {
+    from {
+        opacity: 1;
+        transform: translate(-50%, -50%) scale(1);
+    }
+    to {
+        opacity: 0;
+        transform: translate(-50%, -50%) scale(0.95);
+    }
+}
+
+#game-end-popup {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: var(--z-modal);
+    pointer-events: none;
+}
+
+#game-end-popup-title {
+    margin: 0 0 8px 0;
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--accent-primary);
+    text-shadow: 0 0 24px var(--accent-glow);
+    letter-spacing: 0.5px;
+}
+
+#game-end-popup-message {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    letter-spacing: 0.3px;
+}
+
 .btn-danger { 
     background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%) !important;
     color: white !important;

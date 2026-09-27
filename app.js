@@ -128,6 +128,12 @@ async function joinGame() {
 }
 
 async function declareReady() {
+    // If game already ended, opt into next match via player-specific rematch mechanism
+    if (isGameOverStatus(lastKnownStatus.toUpperCase())) {
+        displayOverlay("Waiting for opponent to be ready...");
+        await requestRematch();
+        return;
+    }
     displayOverlay("Waiting for opponent to ready up...");
     await fetch(`${SERVER_URL}/ready?color=${myColor}`);
 }
@@ -244,16 +250,58 @@ function connectWebSocket() {
 // 3. MATCH FLOW LOGIC
 // ==========================================
 function startOfficialMatch(data) {
+    // START is an authoritative "new match has begun" event from the server.
+    // It carries the complete authoritative fresh game state.
+    // Use it directly - no need for separate fetchBoard() call.
+
+    // Reset all previous terminal/game-over frontend state
+    lastKnownStatus = "White's Turn";
+    boardHistory = [INITIAL_BOARD];
+    currentViewIndex = 0;
+    moveCounter = 1;
+    selectedSquare = null;
+    lastPlayedMove = null;
+    isGameOverLock = false;
+    clearInterval(timerInterval);
+    if (autoAbortTimer) { clearTimeout(autoAbortTimer); autoAbortTimer = null; }
+    hideOverlay();
+    document.getElementById("game-end-panel").classList.add("hidden");
+    document.getElementById("move-log").innerHTML = "";
+
     isGameOverLock = false;
     matchStarted = true;
     hideOverlay();
     document.getElementById("game-end-panel").classList.add("hidden");
 
-    // Initialize the authoritative turn color from the server payload
+    // Initialize from authoritative START payload
     if (data && data.currentTurn) {
-        currentTurnColor = data.currentTurn; // Should be "WHITE" on a fresh start
+        currentTurnColor = data.currentTurn;
     } else {
         currentTurnColor = "WHITE";
+    }
+
+    if (data && data.grid) {
+        // Use the authoritative initial board from START
+        boardHistory = [data.grid];
+        drawBoard(data.grid);
+    } else {
+        boardHistory = [INITIAL_BOARD];
+        drawBoard(INITIAL_BOARD);
+    }
+
+    // Initialize clocks from authoritative START payload
+    if (data && data.whiteTime !== undefined && data.blackTime !== undefined) {
+        serverWhiteTimeMs = data.whiteTime;
+        serverBlackTimeMs = data.blackTime;
+    } else {
+        serverWhiteTimeMs = 600000;
+        serverBlackTimeMs = 600000;
+    }
+    localTimerStartMs = Date.now();
+
+    if (data && data.moveHistory !== undefined) {
+        // Should be empty for fresh game, but handle anyway
+        // No need to rebuild history for fresh match
     }
 
     if (myColor !== "SPECTATOR") {
@@ -262,7 +310,7 @@ function startOfficialMatch(data) {
         if (abortBtn) abortBtn.classList.remove("hidden");
     }
 
-    localTimerStartMs = Date.now();
+    updateClockUI();
     startTimers();
 
     // Auto-abort if no moves are played in 10 seconds of start
@@ -326,15 +374,17 @@ function executeLiveMoveUpdate(data) {
             currentTurnColor = data.currentTurn;
         }
 
-        updateClockUI();
-
         const statusUpper = data.status ? data.status.toUpperCase() : "";
         const gameIsDead = isGameOverStatus(statusUpper);
 
-        if (!gameIsDead) {
-            startTimers();
-        } else {
+        // For terminal states: use authoritative server clock values, stop local timer
+        if (gameIsDead) {
             clearInterval(timerInterval);
+            // Use the frozen server values as the authoritative final times
+            updateClockUI(serverWhiteTimeMs, serverBlackTimeMs);
+        } else {
+            updateClockUI();
+            startTimers();
         }
     }
 
@@ -394,7 +444,7 @@ function executeLiveMoveUpdate(data) {
             isGameOverLock = true;
         }
 
-        showGameEndPanel(data.status);
+        showGameEndPanel(data.status, true); // live game-end → show popup
         return;
     } else {
         if (matchControls && myColor !== "SPECTATOR") matchControls.classList.remove("hidden");
@@ -453,6 +503,11 @@ async function leaveTable() {
 }
 
 async function resetGame() { await fetch(`${SERVER_URL}/reset`); }
+
+// Player-specific rematch request (does NOT globally reset the game)
+async function requestRematch() {
+    await fetch(`${SERVER_URL}/rematch?color=${myColor}`);
+}
 
 // ==========================================
 // 4. ACTION FUNCTIONS
@@ -547,7 +602,8 @@ async function fetchBoard() {
             });
         } else {
             lastPlayedMove = null;
-            lastKnownStatus = "White's Turn";
+            // Preserve authoritative terminal status from server when match is not active
+            lastKnownStatus = data.status || "White's Turn";
         }
 
         // Restore chat history from server
@@ -579,6 +635,12 @@ async function fetchBoard() {
         const statusUpper = lastKnownStatus.toUpperCase();
         const isGameOver = isGameOverStatus(statusUpper);
 
+        // Check if current player has opted into next match (via new sync fields)
+        const whiteWantsRematch = data.whiteWantsRematch === true;
+        const blackWantsRematch = data.blackWantsRematch === true;
+        const iOptedIn = myColor === "WHITE" ? whiteWantsRematch : blackWantsRematch;
+        const opponentOptedIn = myColor === "WHITE" ? blackWantsRematch : whiteWantsRematch;
+
         if (isGameOver) {
             matchStarted = false;
             clearInterval(timerInterval);
@@ -590,7 +652,51 @@ async function fetchBoard() {
                 isGameOverLock = true;
             }
 
-            showGameEndPanel(lastKnownStatus);
+            // If current player has opted in but opponent hasn't, show "Waiting for opponent..."
+            // If current player hasn't opted in, show Welcome screen with "I am Ready" button
+            // If both have opted in, START message will arrive soon, we'll handle it in startOfficialMatch
+            // iOptedIn and opponentOptedIn already declared above
+
+            // Determine UI state based on participation:
+            // A. I opted in, opponent hasn't -> I WAIT
+            // B. I didn't opt in, opponent did -> I ANALYZE (stay on ended board)
+            // C. Both opted in -> START coming, hide overlay
+            // D. Neither opted in -> normal ended-game analysis state
+            // E. Refreshed after game end -> show Welcome (no analysis state)
+
+            // Track if this is a fresh load (no prior analysis view)
+            // If boardHistory has only INITIAL_BOARD and moveCounter === 1, we're in "Welcome" state
+            // Otherwise we're in "analysis" state
+            const isAnalyzingEndedGame = boardHistory.length > 1 || moveCounter > 1;
+
+            if (iOptedIn && !opponentOptedIn) {
+                // A. I opted in, opponent hasn't -> I WAIT
+                displayOverlay("Waiting for opponent to be ready...");
+            } else if (iOptedIn && opponentOptedIn) {
+                // C. Both opted in -> START coming, hide overlay
+                hideOverlay();
+            } else if (!iOptedIn && opponentOptedIn) {
+                // B. Opponent opted in, I didn't -> I REMAIN ANALYZING
+                // Do NOT show overlay, keep ended board visible
+                // Show subtle indicator that opponent wants rematch (optional)
+                // Just ensure overlay is hidden if it was showing waiting
+                hideOverlay();
+            } else if (!iOptedIn && !opponentOptedIn) {
+                // D. Neither opted in
+                if (isAnalyzingEndedGame) {
+                    // Still analyzing - keep ended board, no overlay
+                    hideOverlay();
+                } else {
+                    // E. Fresh load/refresh - show Welcome with I AM READY
+                    if (myColor !== "SPECTATOR") {
+                        displayOverlay(`<h2>Welcome, ${myColor}</h2><br><button onclick="declareReady()" style="padding:10px 20px; font-size:18px; cursor:pointer;">I am Ready</button>`);
+                    } else {
+                        updateStatusUI("Spectating finished match...");
+                    }
+                }
+            }
+
+            showGameEndPanel(lastKnownStatus, false); // refresh/restore → no popup
 
         } else {
             clearInterval(timerInterval);
@@ -674,29 +780,33 @@ function buildGameOverHTML(rawStatus) {
 }
 
 // Show game-end result in sidebar panel instead of full-screen overlay
-function showGameEndPanel(rawStatus) {
+// showPopup: true only for live ACTIVE→ENDED transition (WebSocket MOVE), false for refresh/history
+function showGameEndPanel(rawStatus, showPopup = false) {
     const statusUpper = rawStatus.toUpperCase();
     let title = "Game Over";
     let message = "";
 
     if (statusUpper.includes("CHECKMATE")) {
         title = "CHECKMATE";
-        const winner = statusUpper.includes("WHITE") ? "White" : "Black";
+        // Parse actual winner from server status: "CHECKMATE! WHITE wins!" or "CHECKMATE! BLACK wins!"
+        const winner = statusUpper.includes("WHITE WINS") ? "White" : "Black";
         message = `${winner} wins!`;
     } else if (statusUpper.includes("TIME")) {
         title = "TIME OUT";
-        const winner = statusUpper.includes("WHITE") ? "White" : "Black";
+        // Parse actual winner from server status: "TIME_OUT! WHITE wins on time!" or "TIME_OUT! BLACK wins on time!"
+        const winner = statusUpper.includes("WHITE WINS") ? "White" : "Black";
         message = `${winner} wins on time!`;
     } else if (statusUpper.includes("ABORT")) {
-        title = "MATCH ABORTED";
-        message = "Game was aborted.";
+        title = "GAME ABORTED";
+        message = "";
     } else if (statusUpper.includes("DRAW")) {
         title = "DRAW";
-        message = "The game ended in a draw.";
+        message = "Game Drawn";
     } else if (statusUpper.includes("RESIGN")) {
         title = "RESIGNATION";
-        const winner = statusUpper.includes("WHITE") ? "Black" : "White";
-        message = `${winner} wins by resignation!`;
+        // Parse actual winner from server status: "RESIGNATION! WHITE wins!" or "RESIGNATION! BLACK wins!"
+        const winner = statusUpper.includes("WHITE WINS") ? "White" : "Black";
+        message = `${winner} wins!`;
     } else if (statusUpper.includes("ABANDONED")) {
         const leaver = statusUpper.includes("WHITE ABANDONED") ? "White" : "Black";
         const winner = statusUpper.includes("WHITE ABANDONED") ? "Black" : "White";
@@ -711,8 +821,38 @@ function showGameEndPanel(rawStatus) {
     document.getElementById("game-end-message").innerText = message;
     document.getElementById("game-end-panel").classList.remove("hidden");
 
+    // Show temporary popup notification (only on live game-end transition)
+    if (showPopup) {
+        showGameEndPopup(title, message);
+    }
+
     // Hide full-screen overlay if visible
     hideOverlay();
+}
+
+// Show temporary game-end notification popup
+function showGameEndPopup(title, message) {
+    const popup = document.getElementById("game-end-popup");
+    const popupBox = popup.querySelector(".game-end-popup-box");
+    const titleEl = document.getElementById("game-end-popup-title");
+    const messageEl = document.getElementById("game-end-popup-message");
+
+    if (!popup || !popupBox || !titleEl || !messageEl) return;
+
+    titleEl.innerText = title;
+    messageEl.innerText = message;
+
+    // Reset and show
+    popupBox.classList.remove("fade-out");
+    popup.classList.remove("hidden");
+
+    // Auto-hide after 1.5 seconds
+    setTimeout(() => {
+        popupBox.classList.add("fade-out");
+        setTimeout(() => {
+            popup.classList.add("hidden");
+        }, 300); // Wait for fade-out animation
+    }, 1500);
 }
 
 // THEME SWITCHER
@@ -1174,7 +1314,7 @@ function viewLive() {
     // Restore the game-over panel for ALL terminal states
     const statusUpper = lastKnownStatus.toUpperCase();
     if (isGameOverStatus(statusUpper)) {
-        showGameEndPanel(lastKnownStatus);
+        showGameEndPanel(lastKnownStatus, false); // history navigation → no popup
     }
 }
 
@@ -1271,7 +1411,7 @@ function displayOverlay(message, showReset = false) {
         finalHtml += `
         <br><br>
         <div style="display: flex; gap: 15px; justify-content: center;">
-            <button onclick="resetGame()" style="padding:10px 20px; font-size:18px; cursor:pointer; background-color:#34495e; color:white; border:none; border-radius:5px;">Rematch</button>
+            <button onclick="requestRematch()" style="padding:10px 20px; font-size:18px; cursor:pointer; background-color:#34495e; color:white; border:none; border-radius:5px;">Rematch</button>
             <button onclick="leaveTable()" style="padding:10px 20px; font-size:18px; cursor:pointer; background-color:#c0392b; color:white; border:none; border-radius:5px;">Leave Table</button>
         </div>`;
     }

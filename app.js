@@ -56,8 +56,12 @@ let lastPlayedMove = null;
 
 let myColor = "SPECTATOR";
 let matchStarted = false;
-let autoAbortTimer = null;
 let isGameOverLock = false;
+
+// View management state
+let currentView = 'landing';
+let previousView = 'landing';
+let hasJoinedGame = false;
 
 // currentTurnColor: the authoritative source of whose turn it is.
 // Set from the server's "currentTurn" field on every MOVE/START/sync.
@@ -78,18 +82,107 @@ function updateStatusUI(text) {
     lastKnownStatus = text;
     const statusDiv = document.getElementById("status");
     if (myColor === "SPECTATOR") {
-        statusDiv.innerHTML = `<span style="color: #f1c40f;">👁️ SPECTATING</span> | ${text}`;
+        statusDiv.innerHTML = `<span style="color: var(--accent-gold); font-weight: 600;">SPECTATING</span> | ${text}`;
     } else {
         statusDiv.innerText = text;
     }
 }
 
 // ==========================================
+// ABORT COUNTDOWN UI (Clock-area presentation)
+// ==========================================
+let abortCountdownInterval = null;
+let currentAbortTargetColor = null;
+
+function clearClockAreaWarning(color) {
+    const el = document.getElementById(`${color}-disconnect`);
+    if (el && el.innerText.includes("AUTO-ABORT")) {
+        el.classList.add("hidden");
+        el.innerText = "";
+    }
+}
+
+function clearAbortCountdown() {
+    if (abortCountdownInterval) {
+        clearInterval(abortCountdownInterval);
+        abortCountdownInterval = null;
+    }
+    if (currentAbortTargetColor) {
+        clearClockAreaWarning(currentAbortTargetColor);
+        currentAbortTargetColor = null;
+    }
+    clearClockAreaWarning("WHITE");
+    clearClockAreaWarning("BLACK");
+
+    // Defensively remove any legacy top banner
+    const oldBanner = document.getElementById("abort-warning-banner");
+    if (oldBanner) oldBanner.remove();
+}
+
+function hideAbortWarning() {
+    clearAbortCountdown();
+}
+
+function handleAbortTimerState(abortState) {
+    if (!abortState || !abortState.active || !abortState.warningActive) {
+        clearAbortCountdown();
+        return;
+    }
+
+    const color = abortState.color ? abortState.color.toUpperCase() : "WHITE";
+    const deadline = abortState.deadline;
+
+    // Clear previous interval if running
+    if (abortCountdownInterval) {
+        clearInterval(abortCountdownInterval);
+        abortCountdownInterval = null;
+    }
+
+    // If turn switched, clear opposite player's clock display
+    if (currentAbortTargetColor && currentAbortTargetColor !== color) {
+        clearClockAreaWarning(currentAbortTargetColor);
+    }
+    currentAbortTargetColor = color;
+
+    const targetTimer = document.getElementById(`${color}-disconnect`);
+    if (!targetTimer) return;
+
+    // Compute remaining seconds from authoritative backend deadline
+    const getSecondsRemaining = () => {
+        if (!deadline) return 15;
+        const diff = deadline - Date.now();
+        return Math.max(1, Math.ceil(diff / 1000));
+    };
+
+    const initialSec = getSecondsRemaining();
+    targetTimer.classList.remove("hidden");
+    targetTimer.innerHTML = `AUTO-ABORT IN ${initialSec}`;
+
+    abortCountdownInterval = setInterval(() => {
+        const sec = getSecondsRemaining();
+        if (sec > 0 && currentAbortTargetColor === color) {
+            targetTimer.classList.remove("hidden");
+            targetTimer.innerHTML = `AUTO-ABORT IN ${sec}`;
+        } else {
+            // Keep at 1 or stop interval and wait for authoritative ABORT_TIMEOUT from server
+            clearInterval(abortCountdownInterval);
+            abortCountdownInterval = null;
+        }
+    }, 1000);
+}
+
+// ==========================================
 // 2. INITIALIZATION & LOBBY SYSTEM
 // ==========================================
-async function joinGame() {
+async function joinGame(isReturningSession = false) {
     try {
         let savedToken = localStorage.getItem("chessToken") || "";
+        // If not restoring an active in-game session and saved token is SPECTATOR,
+        // clear savedToken so the visitor can claim White/Black if a seat is open
+        if (!isReturningSession && savedToken === "SPECTATOR") {
+            savedToken = "";
+        }
+
         const response = await fetch(`${SERVER_URL}/join?token=${savedToken}`);
         const tokenResponse = await response.text();
 
@@ -104,17 +197,24 @@ async function joinGame() {
             localStorage.setItem("chessToken", tokenResponse);
         } else {
             myColor = "SPECTATOR";
+            localStorage.setItem("chessToken", "SPECTATOR");
         }
 
         const leftColumn = document.querySelector(".left-column");
-        if (myColor === "BLACK") leftColumn.classList.add("flipped-board");
+        if (leftColumn) {
+            if (myColor === "BLACK") {
+                leftColumn.classList.add("flipped-board");
+            } else {
+                leftColumn.classList.remove("flipped-board");
+            }
+        }
 
         if (myColor !== "SPECTATOR") {
             updateStatusUI(`You are playing as: ${myColor}`);
             displayOverlay(`<h2>Welcome, ${myColor}</h2><br><button onclick="declareReady()" style="padding:10px 20px; font-size:18px; cursor:pointer;">I am Ready</button>`);
         } else {
             updateStatusUI("Spectating Live Match...");
-            displayOverlay(`<h2>👁️ Spectating Mode</h2><p style="font-size: 24px; color: white;">You are watching a live match.</p>`);
+            displayOverlay(`<h2>Spectator Mode</h2><p style="font-size: 20px; color: var(--text-primary); margin-top: 12px;">You are watching a live match.</p>`);
             setTimeout(() => hideOverlay(), 3000);
         }
     } catch (error) {
@@ -211,10 +311,32 @@ function connectWebSocket() {
                 return;
             }
 
-            // Hide disconnect banners when the game ends
-            if (data.status && (data.status.toUpperCase().includes("WINS") || data.status.toUpperCase().includes("DRAW"))) {
+            // --- ABORT WARNING / COUNTDOWN ---
+            if (data.type === "ABORT_WARNING" || data.type === "ABORT_COUNTDOWN") {
+                if (data.abortTimer) handleAbortTimerState(data.abortTimer);
+                else handleAbortTimerState(data);
+                return;
+            }
+
+            // --- ABORT TIMEOUT (match aborted due to inactivity) ---
+            if (data.type === "ABORT_TIMEOUT") {
+                clearAbortCountdown();
+                // The server sends status and grid; handle as game end
+                if (data.status) {
+                    lastKnownStatus = data.status;
+                    updateStatusUI(data.status);
+                    showGameEndPanel(data.status, true);
+                    matchStarted = false;
+                    clearInterval(timerInterval);
+                }
+                return;
+            }
+
+            // Hide disconnect and abort banners when the game ends
+            if (data.status && (data.status.toUpperCase().includes("WINS") || data.status.toUpperCase().includes("DRAW") || data.status.toUpperCase().includes("ABORT"))) {
                 clearInterval(disconnectInterval);
                 disconnectInterval = null;
+                clearAbortCountdown();
                 const whiteTimer = document.getElementById("WHITE-disconnect");
                 const blackTimer = document.getElementById("BLACK-disconnect");
                 if (whiteTimer) whiteTimer.classList.add("hidden");
@@ -263,15 +385,12 @@ function startOfficialMatch(data) {
     lastPlayedMove = null;
     isGameOverLock = false;
     clearInterval(timerInterval);
-    if (autoAbortTimer) { clearTimeout(autoAbortTimer); autoAbortTimer = null; }
+    hideAbortWarning();
     hideOverlay();
     document.getElementById("game-end-panel").classList.add("hidden");
     document.getElementById("move-log").innerHTML = "";
 
-    isGameOverLock = false;
     matchStarted = true;
-    hideOverlay();
-    document.getElementById("game-end-panel").classList.add("hidden");
 
     // Initialize from authoritative START payload
     if (data && data.currentTurn) {
@@ -280,13 +399,13 @@ function startOfficialMatch(data) {
         currentTurnColor = "WHITE";
     }
 
-    if (data && data.grid) {
-        // Use the authoritative initial board from START
-        boardHistory = [data.grid];
-        drawBoard(data.grid);
-    } else {
-        boardHistory = [INITIAL_BOARD];
-        drawBoard(INITIAL_BOARD);
+    const isValidGrid = Array.isArray(data?.grid) && data.grid.length === 8 && Array.isArray(data.grid[0]) && data.grid[0].length === 8;
+    const gridToDraw = isValidGrid ? data.grid : INITIAL_BOARD;
+    boardHistory = [gridToDraw];
+    try {
+        drawBoard(gridToDraw);
+    } catch (err) {
+        console.error("Error rendering board during START:", err);
     }
 
     // Initialize clocks from authoritative START payload
@@ -310,13 +429,15 @@ function startOfficialMatch(data) {
         if (abortBtn) abortBtn.classList.remove("hidden");
     }
 
+    updateStatusUI("White's Turn");
     updateClockUI();
     startTimers();
 
-    // Auto-abort if no moves are played in 10 seconds of start
-    autoAbortTimer = setTimeout(() => {
-        if (moveCounter === 1) sendAction("ABORT", true);
-    }, 10000);
+    if (data && data.abortTimer) {
+        handleAbortTimerState(data.abortTimer);
+    } else {
+        clearAbortCountdown();
+    }
 }
 
 // ==========================================
@@ -357,11 +478,8 @@ function executeLiveMoveUpdate(data) {
     updateStatusUI(data.status);
     logAlgebraicNotation(data.pieceCode, data.startX, data.startY, data.endX, data.endY, data.status, data.promotion);
 
-    // Clear the initial auto-abort timer the moment any move is played
-    if (autoAbortTimer) {
-        clearTimeout(autoAbortTimer);
-        autoAbortTimer = null;
-    }
+    // Hide abort warning on any valid move (backend cancels timer)
+    hideAbortWarning();
 
     // Update clocks and the authoritative turn color from server data
     if (data.whiteTime !== undefined && data.blackTime !== undefined) {
@@ -408,16 +526,6 @@ function executeLiveMoveUpdate(data) {
     const statusUpper = data.status.toUpperCase();
     const isGameOver = isGameOverStatus(statusUpper);
 
-    // After White's first move, start 10s countdown for Black to respond
-    // boardHistory now has: [INITIAL, afterWhite1] → length === 2
-    if (boardHistory.length === 2) {
-        autoAbortTimer = setTimeout(() => {
-            if (boardHistory.length === 2 && myColor === "WHITE") {
-                sendAction("ABORT", true);
-            }
-        }, 10000);
-    }
-
     // Audio feedback
     if (statusUpper.includes("CHECKMATE")) {
         sfxWin.play().catch(e => console.log("Audio blocked"));
@@ -456,6 +564,11 @@ function executeLiveMoveUpdate(data) {
 
         // Always check/update king check highlight (function clears stale highlights internally)
         highlightKingInCheck();
+
+        // Handle abort countdown for the new turn
+        if (data && data.abortTimer) {
+            handleAbortTimerState(data.abortTimer);
+        }
     }
 }
 
@@ -464,7 +577,7 @@ function executeLocalReset() {
     document.getElementById("match-controls").classList.add("hidden");
     document.getElementById("game-end-panel").classList.add("hidden");
     clearInterval(timerInterval);
-    if (autoAbortTimer) { clearTimeout(autoAbortTimer); autoAbortTimer = null; }
+    hideAbortWarning();
 
     // Reset all game state
     updateStatusUI("White's Turn");
@@ -496,6 +609,7 @@ function executeLocalReset() {
 
 async function leaveTable() {
     localStorage.removeItem("chessToken");
+    sessionStorage.removeItem("chess_in_game");
     if (myColor === "WHITE" || myColor === "BLACK") {
         await fetch(`${SERVER_URL}/leave`);
     }
@@ -579,6 +693,13 @@ async function fetchBoard() {
             }
 
             updateClockUI();
+        }
+
+        // Handle abort timer state for synchronization and reconnection recovery
+        if (data.abortTimer && data.abortTimer.active && data.matchStarted) {
+            handleAbortTimerState(data.abortTimer);
+        } else {
+            clearAbortCountdown();
         }
 
         // Rebuild move log and board history from server memory
@@ -782,6 +903,7 @@ function buildGameOverHTML(rawStatus) {
 // Show game-end result in sidebar panel instead of full-screen overlay
 // showPopup: true only for live ACTIVE→ENDED transition (WebSocket MOVE), false for refresh/history
 function showGameEndPanel(rawStatus, showPopup = false) {
+    hideAbortWarning();
     const statusUpper = rawStatus.toUpperCase();
     let title = "Game Over";
     let message = "";
@@ -895,15 +1017,25 @@ function highlightLastMoveSquares() {
     }
 }
 
+let currentRenderedPerspective = null;
+
 function drawBoard(grid) {
     const boardDiv = document.getElementById("chessboard");
+    if (!boardDiv) return;
     
+    const effectivePerspective = (myColor === "BLACK") ? "BLACK" : "WHITE";
+    if (currentRenderedPerspective !== effectivePerspective) {
+        boardDiv.querySelectorAll(".square").forEach(sq => sq.remove());
+        clearArrows();
+        currentRenderedPerspective = effectivePerspective;
+    }
+
     // Check if squares already exist (first run vs update)
     // Use querySelectorAll to count only .square elements, not the arrow overlay SVG
     const squaresExist = boardDiv.querySelectorAll(".square").length === 64;
     
     // Create SVG overlay for arrows on first run
-    if (!squaresExist) {
+    if (!document.getElementById("arrow-overlay")) {
         createArrowOverlay(boardDiv);
     }
 
@@ -911,7 +1043,7 @@ function drawBoard(grid) {
     let cols = [0, 1, 2, 3, 4, 5, 6, 7];
     const fileNames = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
 
-    if (myColor === "BLACK") {
+    if (effectivePerspective === "BLACK") {
         rows = [...rows].reverse();
         cols = [...cols].reverse();
     }
@@ -1092,29 +1224,39 @@ let isDrawingArrow = false;
 let arrowStartSquare = null;
 let currentArrow = null;
 
+let arrowListenersAttached = false;
+
 function createArrowOverlay(boardDiv) {
-    arrowSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-    arrowSvg.id = "arrow-overlay";
-    arrowSvg.setAttribute("viewBox", "0 0 100 100");
-    arrowSvg.style.position = "absolute";
-    arrowSvg.style.top = "0";
-    arrowSvg.style.left = "0";
-    arrowSvg.style.width = "100%";
-    arrowSvg.style.height = "100%";
-    arrowSvg.style.pointerEvents = "none";
-    arrowSvg.style.zIndex = "10";
+    if (document.getElementById("arrow-overlay")) {
+        arrowSvg = document.getElementById("arrow-overlay");
+        arrowLayer = document.getElementById("arrow-layer");
+    } else {
+        arrowSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+        arrowSvg.id = "arrow-overlay";
+        arrowSvg.setAttribute("viewBox", "0 0 100 100");
+        arrowSvg.style.position = "absolute";
+        arrowSvg.style.top = "0";
+        arrowSvg.style.left = "0";
+        arrowSvg.style.width = "100%";
+        arrowSvg.style.height = "100%";
+        arrowSvg.style.pointerEvents = "none";
+        arrowSvg.style.zIndex = "10";
+        
+        arrowLayer = document.createElementNS("http://www.w3.org/2000/svg", "g");
+        arrowLayer.id = "arrow-layer";
+        arrowSvg.appendChild(arrowLayer);
+        
+        boardDiv.appendChild(arrowSvg);
+    }
     
-    arrowLayer = document.createElementNS("http://www.w3.org/2000/svg", "g");
-    arrowLayer.id = "arrow-layer";
-    arrowSvg.appendChild(arrowLayer);
-    
-    boardDiv.appendChild(arrowSvg);
-    
-    boardDiv.addEventListener("contextmenu", (e) => e.preventDefault());
-    boardDiv.addEventListener("mousedown", handleArrowMouseDown);
-    document.addEventListener("mousemove", handleArrowMouseMove);
-    document.addEventListener("mouseup", handleArrowMouseUp);
-    boardDiv.addEventListener("click", clearArrows);
+    if (!arrowListenersAttached) {
+        boardDiv.addEventListener("contextmenu", (e) => e.preventDefault());
+        boardDiv.addEventListener("mousedown", handleArrowMouseDown);
+        document.addEventListener("mousemove", handleArrowMouseMove);
+        document.addEventListener("mouseup", handleArrowMouseUp);
+        boardDiv.addEventListener("click", clearArrows);
+        arrowListenersAttached = true;
+    }
 }
 
 function getSquareFromEvent(e) {
@@ -1473,16 +1615,175 @@ function updateClockUI(wMs = serverWhiteTimeMs, bMs = serverBlackTimeMs) {
 }
 
 // ==========================================
-// 7. START THE APP
+// 7. VIEW SWITCHING & ENTRY FLOW
 // ==========================================
-(async function init() {
-    await joinGame();
-    connectWebSocket();
-    fetchBoard();
+function showView(viewName) {
+    if (viewName !== currentView) {
+        previousView = currentView;
+        currentView = viewName;
+    }
+
+    const landingView = document.getElementById("landing-view");
+    const rulebookView = document.getElementById("rulebook-view");
+    const gameView = document.getElementById("game-view");
+
+    if (landingView) landingView.classList.toggle("hidden", viewName !== "landing");
+    if (rulebookView) rulebookView.classList.toggle("hidden", viewName !== "rulebook");
+    if (gameView) gameView.classList.toggle("hidden", viewName !== "game");
+
+    const navHome = document.getElementById("nav-home-btn");
+    const navRules = document.getElementById("nav-rules-btn");
+    const navGame = document.getElementById("nav-game-btn");
+
+    if (navHome) navHome.classList.toggle("active", viewName === "landing");
+    if (navRules) navRules.classList.toggle("active", viewName === "rulebook");
+    if (navGame) navGame.classList.toggle("active", viewName === "game");
+
+    updatePlayButtonsText();
+
+    if (viewName === "rulebook") {
+        const rbMain = document.querySelector(".rulebook-main-content");
+        if (rbMain) rbMain.scrollTop = 0;
+    }
+
+    if (viewName === "game" && hasJoinedGame) {
+        fetchBoard();
+    }
+}
+
+function updatePlayButtonsText() {
+    const navGameText = document.getElementById("nav-game-text");
+    const btnPlayText = document.getElementById("btn-play-text");
+    const savedToken = localStorage.getItem("chessToken");
+    const isPlayerToken = savedToken && (savedToken.startsWith("WHITE") || savedToken.startsWith("BLACK"));
+
+    let text = "Play Match";
+    let btnText = "Play Chess";
+
+    if (hasJoinedGame || isPlayerToken) {
+        text = "Return to Match";
+        btnText = "Return to Match";
+    }
+
+    if (navGameText) navGameText.innerText = text;
+    if (btnPlayText) btnPlayText.innerText = btnText;
+}
+
+function switchRuleTab(tabName) {
+    document.querySelectorAll(".rulebook-tab-btn").forEach(btn => {
+        btn.classList.toggle("active", btn.getAttribute("data-tab") === tabName);
+    });
+
+    const targetSection = document.getElementById(`rules-${tabName}`);
+    if (targetSection) {
+        targetSection.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+}
+
+function navigateBackFromRulebook() {
+    if (previousView === "game" && hasJoinedGame) {
+        showView("game");
+    } else {
+        showView("landing");
+    }
+}
+
+async function handlePlayClick() {
+    if (hasJoinedGame) {
+        showView("game");
+        return;
+    }
+    await enterGame();
+}
+
+async function enterGame() {
+    const loadingScreen = document.getElementById("loading-screen");
+    if (loadingScreen) {
+        loadingScreen.classList.remove("fade-out");
+        loadingScreen.classList.remove("hidden");
+    }
+
+    const wasInGameSession = sessionStorage.getItem("chess_in_game") === "true";
+    sessionStorage.setItem("chess_in_game", "true");
+    hasJoinedGame = true;
+
+    showView("game");
+
+    try {
+        await joinGame(wasInGameSession);
+        connectWebSocket();
+        fetchBoard();
+    } catch (e) {
+        console.error("Error entering game:", e);
+    } finally {
+        if (loadingScreen) {
+            loadingScreen.classList.add("fade-out");
+            setTimeout(() => loadingScreen.classList.add("hidden"), 300);
+        }
+    }
+}
+
+function initLandingShowcaseBoard() {
+    const showcaseContainer = document.getElementById("landing-board");
+    if (!showcaseContainer) return;
+    showcaseContainer.innerHTML = "";
+
+    // Italian Game Position (White perspective: rank 8 down to rank 1)
+    // 1. e4 e5 2. Nf3 Nc6 3. Bc4 Bc5
+    const showcaseGrid = [
+        ["wR", "wN", "wB", "wQ", "wK", "",   "",   "wR"], // row 0: rank 1 (a1-h1)
+        ["wP", "wP", "wP", "wP", "",   "wP", "wP", "wP"], // row 1: rank 2 (a2-h2)
+        ["",   "",   "",   "",   "",   "wN", "",   ""  ], // row 2: rank 3 (N on f3)
+        ["",   "",   "wB", "",   "wP", "",   "",   ""  ], // row 3: rank 4 (Bc4, Pe4)
+        ["",   "",   "bB", "",   "bP", "",   "",   ""  ], // row 4: rank 5 (Bc5, Pe5)
+        ["",   "",   "bN", "",   "",   "",   "",   ""  ], // row 5: rank 6 (N on c6)
+        ["bP", "bP", "bP", "bP", "",   "bP", "bP", "bP"], // row 6: rank 7 (a7-h7)
+        ["bR", "",   "bB", "bQ", "bK", "",   "bN", "bR"]  // row 7: rank 8 (a8-h8)
+    ];
+
+    // White perspective: top to bottom is row 7 down to row 0
+    for (let row = 7; row >= 0; row--) {
+        for (let col = 0; col < 8; col++) {
+            const sq = document.createElement("div");
+            const isDark = (row + col) % 2 === 0;
+            sq.className = `showcase-square ${isDark ? 'dark' : 'light'}`;
+
+            const pieceCode = showcaseGrid[row][col];
+            if (pieceCode && pieceImages[pieceCode]) {
+                const img = document.createElement("img");
+                img.className = "showcase-piece piece-symbol";
+                img.src = pieceImages[pieceCode];
+                img.alt = pieceCode;
+                img.draggable = false;
+                sq.appendChild(img);
+            }
+            showcaseContainer.appendChild(sq);
+        }
+    }
+}
+
+// Expose navigation and abort functions to window
+window.showView = showView;
+window.handlePlayClick = handlePlayClick;
+window.navigateBackFromRulebook = navigateBackFromRulebook;
+window.switchRuleTab = switchRuleTab;
+window.handleAbortTimerState = handleAbortTimerState;
+window.clearAbortCountdown = clearAbortCountdown;
+
+// ==========================================
+// 8. START THE APP
+// ==========================================
+(function init() {
+    initLandingShowcaseBoard();
+
+    // Every full page load must initially display the landing page
+    showView("landing");
 })();
 
 document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible") fetchBoard();
+    if (document.visibilityState === "visible" && hasJoinedGame && currentView === "game") {
+        fetchBoard();
+    }
 });
 
 // ==========================================
@@ -1568,11 +1869,11 @@ function initUITheme() {
     const root = document.documentElement;
     const toggleBtn = document.getElementById("theme-toggle");
 
-    // Determine initial theme: localStorage > prefers-color-scheme > light (default)
+    // Determine initial theme: localStorage > dark (default classic chess aesthetic)
     let savedTheme = localStorage.getItem("uiTheme");
     if (!savedTheme) {
-        // Default to light theme
-        savedTheme = "light";
+        // Default to dark theme
+        savedTheme = "dark";
     }
     root.dataset.theme = savedTheme;
     currentTheme = savedTheme;

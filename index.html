@@ -1,124 +1,638 @@
- <!DOCTYPE html>
-<html lang="en">
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Multiplayer Chess</title>
-    
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>♟️</text></svg>">
-    
+    <title>DiChess - Real-Time Multiplayer Chess</title>
+
+    <link rel="icon" type="image/png" href="assets/brand_logo.png">
+    <link rel="apple-touch-icon" href="assets/brand_logo.png">
+
+    <!-- Google Fonts: Playfair Display (Serif Headings) & Inter (Readable Body & Controls) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,500;0,600;0,700;1,400&family=Inter:wght@300;400;500;600;700&display=swap"
+        rel="stylesheet">
+
     <link rel="stylesheet" href="style.css">
 </head>
+
 <body>
     <canvas id="bg-canvas"></canvas>
-    <div id="loading-screen">
-        <div class="bouncing-pawn">♟️</div>
-        <h2 id="loading-text">Waking up the Chess Server...</h2>
-        <p style="color: #bdc3c7;">This might take up to 45 seconds on the first load.</p>
+
+    <!-- Server wake-up / loading screen (shown only during active game entry) -->
+    <div id="loading-screen" class="hidden fade-out">
+        <div class="bouncing-pawn-wrap">
+            <img src="assets/brand_logo.png" class="bouncing-pawn-img" alt="Connecting">
+        </div>
+        <h2 id="loading-text">Connecting to Chess Server...</h2>
+        <p style="color: var(--text-secondary);">Entering match room and synchronizing clocks.</p>
     </div>
-    
+
     <div class="main-container">
+        <!-- Persistent Top Header -->
         <header class="app-header">
-            <h1>DiChess</h1>
-            <button id="theme-toggle" class="theme-toggle" aria-label="Toggle light/dark mode" title="Toggle light/dark mode">
-                <span class="theme-icon-sun">☀️</span>
-                <span class="theme-icon-moon">🌙</span>
-            </button>
+            <div class="header-brand" onclick="showView('landing')" title="Back to Home">
+                <img src="assets/brand_logo.png" class="brand-logo-img" alt="DiChess">
+                <h1 class="brand-title">DiChess</h1>
+                <span class="brand-badge">MULTIPLAYER</span>
+            </div>
+
+            <nav class="header-nav">
+                <button id="nav-home-btn" class="nav-btn active" onclick="showView('landing')" title="Home">
+                    <svg class="nav-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M3 9.5L12 3l9 6.5V20a1 1 0 0 1-1 1h-5v-6h-4v6H4a1 1 0 0 1-1-1V9.5z" />
+                    </svg>
+                    <span>Home</span>
+                </button>
+                <button id="nav-rules-btn" class="nav-btn" onclick="showView('rulebook')" title="Rulebook">
+                    <svg class="nav-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5z" />
+                        <path d="M6 2v20" />
+                    </svg>
+                    <span>Rulebook</span>
+                </button>
+                <button id="nav-game-btn" class="nav-btn" onclick="handlePlayClick()" title="Play or Return to Match">
+                    <svg class="nav-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="14.5" y1="9.5" x2="21" y2="3" />
+                        <line x1="21" y1="3" x2="16.5" y2="3" />
+                        <line x1="21" y1="3" x2="21" y2="7.5" />
+                        <line x1="9.5" y1="14.5" x2="3" y2="21" />
+                        <line x1="3" y1="21" x2="7.5" y2="21" />
+                        <line x1="3" y1="21" x2="3" y2="16.5" />
+                        <line x1="14.5" y1="14.5" x2="21" y2="21" />
+                        <line x1="9.5" y1="9.5" x2="3" y2="3" />
+                    </svg>
+                    <span id="nav-game-text">Play Match</span>
+                </button>
+            </nav>
+
+            <div class="header-actions">
+                <button id="theme-toggle" class="theme-toggle" aria-label="Toggle light/dark mode"
+                    title="Toggle light/dark mode">
+                    <svg class="theme-icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="5" />
+                        <line x1="12" y1="1" x2="12" y2="3" />
+                        <line x1="12" y1="21" x2="12" y2="23" />
+                        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" />
+                        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
+                        <line x1="1" y1="12" x2="3" y2="12" />
+                        <line x1="21" y1="12" x2="23" y2="12" />
+                        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" />
+                        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
+                    </svg>
+                    <svg class="theme-icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+                    </svg>
+                </button>
+            </div>
         </header>
-        
-        <div class="game-layout">
-            <div class="left-column">
-            
-                <div class="player-info">
-                    <span class="player-name">Black</span>
-                    <div class="clock" id="black-clock">10:00</div>
-                    <div id="BLACK-disconnect" class="disconnect-timer hidden"></div>
-                    <div class="captured-area" id="captured-by-black"></div>
-                </div>
 
-                <div class="board-with-coords">
-                    <div id="board-area">
-                        <div id="chessboard"></div>
-                    </div>
-                </div>
+        <!-- ==========================================
+             VIEW 1: LANDING PAGE
+             ========================================== -->
+        <main id="landing-view" class="view-section">
+            <div class="landing-hero-container">
+                <!-- Left Hero Content -->
+                <div class="landing-hero-left">
+                    <div class="hero-pretitle">REAL-TIME MULTIPLAYER CHESS</div>
 
-                <div class="player-info">
-                    <span class="player-name">White</span>
-                    <div class="clock" id="white-clock">10:00</div>
-                    <div id="WHITE-disconnect" class="disconnect-timer hidden"></div>
-                    <div class="captured-area" id="captured-by-white"></div>
-                </div>
+                    <h2 class="landing-hero-title">Experience Chess<br>in Real Time</h2>
 
-            </div>
+                    <p class="landing-hero-subtitle">
+                        Play live multiplayer chess with synchronous clocks, spectator mode, right-click analysis
+                        arrows, and a clean, distraction-free experience.
+                    </p>
 
-            <div id="sidebar">
-                <h3>Match History</h3>
-                <div id="move-log"></div>
-                
-                <div id="match-controls" class="hidden">
-                    <button id="btn-abort" onclick="sendAction('ABORT')">Abort Game</button>
-                    <button id="btn-resign" onclick="sendAction('RESIGN')">Resign</button>
-                </div>
-                
-                <div class="history-controls">
-                    <button onclick="viewFirst()" title="First Move">|&lt;</button>
-                    <button onclick="viewPrevious()" title="Previous Move">&lt;</button>
-                    <button onclick="viewNext()" title="Next Move">&gt;</button>
-                    <button onclick="viewLive()" title="Live Game">&gt;|</button>
-                </div>
-
-                <!-- Game End Panel - shown when game is over -->
-                <div id="game-end-panel" class="hidden">
-                    <h3 id="game-end-title">Game Over</h3>
-                    <div id="game-end-message"></div>
-                    <div id="game-end-actions" style="display: flex; gap: 12px; justify-content: center; margin-top: 16px;">
-                        <button id="btn-rematch" onclick="resetGame()" style="padding:10px 20px; font-size:16px; font-weight: 600; cursor:pointer; background: linear-gradient(135deg, #34495e 0%, #2c3e50 100%); color: var(--text-on-accent); border: none; border-radius: var(--radius-md);">Rematch</button>
-                        <button id="btn-leave-table" onclick="leaveTable()" style="padding:10px 20px; font-size:16px; font-weight: 600; cursor:pointer; background: linear-gradient(135deg, #c0392b 0%, #a93226 100%); color: white; border: none; border-radius: var(--radius-md);">Leave Table</button>
-                    </div>
-                </div>
-
-                <div class="sidebar-settings">
-                    <label style="font-size: 14px; font-weight: bold; color: #bdc3c7;">Board Theme:</label>
-                    <div class="theme-swatches" id="theme-swatches">
-                        <button class="swatch wood" onclick="changeTheme('wood')" title="Classic Wood"></button>
-                        <button class="swatch ocean" onclick="changeTheme('ocean')" title="Ocean Blue"></button>
-                        <button class="swatch midnight" onclick="changeTheme('midnight')" title="Midnight Purple"></button>
-                    </div>
-                </div>
-
-                <div id="chat-container" class="collapsed">
-                    <!-- Clickable header — always visible, toggles the body -->
-                    <div id="chat-header" onclick="toggleChat()">
-                        <span>💬 Chat <span id="chat-unread"></span></span>
-                        <span id="chat-toggle-icon">▶</span>
-                    </div>
-
-                    <!-- Body — hidden when collapsed -->
-                    <div id="chat-body">
-                        <div id="chat-messages">
-                            <div class="chat-msg system">Welcome to the chat!</div>
+                    <div class="hero-actions-group">
+                        <div class="hero-action-item">
+                            <button id="btn-landing-play" class="btn-hero-primary" onclick="handlePlayClick()">
+                                <svg class="btn-icon-svg" viewBox="0 0 24 24" fill="currentColor">
+                                    <polygon points="5 3 19 12 5 21 5 3" />
+                                </svg>
+                                <span id="btn-play-text">Play Chess</span>
+                                <svg class="btn-arrow-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2">
+                                    <line x1="5" y1="12" x2="19" y2="12" />
+                                    <polyline points="12 5 19 12 12 19" />
+                                </svg>
+                            </button>
+                            <span class="action-subtext">Join a match as a player or spectator.</span>
                         </div>
 
-                        <div id="emoji-picker" class="hidden">
-                            <span class="emoji">😀</span><span class="emoji">😂</span><span class="emoji">😎</span><span class="emoji">😭</span>
-                            <span class="emoji">😡</span><span class="emoji">👍</span><span class="emoji">👎</span><span class="emoji">🔥</span>
-                            <span class="emoji">🎉</span><span class="emoji">💀</span><span class="emoji">👀</span><span class="emoji">🤝</span>
+                        <div class="hero-action-item">
+                            <button id="btn-landing-rules" class="btn-hero-secondary" onclick="showView('rulebook')">
+                                <svg class="btn-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2">
+                                    <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5z" />
+                                    <path d="M6 2v20" />
+                                </svg>
+                                <span>Rulebook</span>
+                                <svg class="btn-arrow-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2">
+                                    <line x1="5" y1="12" x2="19" y2="12" />
+                                    <polyline points="12 5 19 12 12 19" />
+                                </svg>
+                            </button>
+                            <span class="action-subtext">Learn pieces, moves and captures.</span>
+                        </div>
+                    </div>
+
+                    <div class="hero-features-strip">
+                        <div class="feature-strip-item">
+                            <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <circle cx="12" cy="12" r="10" />
+                                <polyline points="12 6 12 12 16 14" />
+                            </svg>
+                            <span>10 MINUTE MATCHES</span>
+                        </div>
+                        <div class="feature-strip-item">
+                            <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                                <circle cx="9" cy="7" r="4" />
+                                <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+                                <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+                            </svg>
+                            <span>MULTIPLAYER</span>
+                        </div>
+                        <div class="feature-strip-item">
+                            <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                            </svg>
+                            <span>IN-GAME CHAT</span>
+                        </div>
+                        <div class="feature-strip-item">
+                            <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+                            </svg>
+                            <span>SPECTATOR MODE</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Right Hero Visual: Authentic 3D Chessboard Scene -->
+                <div class="landing-hero-right">
+                    <div class="hero-scene-wrap">
+                        <img src="assets/hero_chess_3d.png" class="hero-scene-img"
+                            alt="DiChess 3D Wooden Chessboard and Carved Pieces">
+                    </div>
+                    <!-- Hidden container to keep app.js showcase initialization safely bound -->
+                    <div id="landing-board" class="hidden"></div>
+                </div>
+            </div>
+        </main>
+
+        <!-- ==========================================
+             VIEW 2: REFINED CHESS RULEBOOK
+             ========================================== -->
+        <section id="rulebook-view" class="view-section hidden">
+            <div class="rulebook-app-layout">
+                <!-- Sidebar Navigation -->
+                <aside class="rulebook-sidebar">
+                    <nav class="rulebook-nav-menu">
+                        <button class="rulebook-tab-btn active" onclick="switchRuleTab('pieces')" data-tab="pieces">
+                            <svg class="rule-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <path d="M18 20V10a2 2 0 0 0-2-2h-8a2 2 0 0 0-2 2v10" />
+                                <circle cx="12" cy="5" r="2" />
+                                <line x1="4" y1="20" x2="20" y2="20" />
+                            </svg>
+                            <span>The Pieces</span>
+                        </button>
+                        <button class="rulebook-tab-btn" onclick="switchRuleTab('intro')" data-tab="intro">
+                            <svg class="rule-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                                <polyline points="14 2 14 8 20 8" />
+                            </svg>
+                            <span>Introduction</span>
+                        </button>
+                        <button class="rulebook-tab-btn" onclick="switchRuleTab('special')" data-tab="special">
+                            <svg class="rule-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+                            </svg>
+                            <span>Special Moves</span>
+                        </button>
+                        <button class="rulebook-tab-btn" onclick="switchRuleTab('draws')" data-tab="draws">
+                            <svg class="rule-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6" />
+                                <path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18" />
+                                <path d="M4 22h16" />
+                                <path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22" />
+                                <path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22" />
+                                <path d="M18 2H6v7a6 6 0 0 0 12 0V2z" />
+                            </svg>
+                            <span>Draws & Endgame</span>
+                        </button>
+                        <button class="rulebook-tab-btn" onclick="switchRuleTab('conduct')" data-tab="conduct">
+                            <svg class="rule-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
+                                <rect x="8" y="2" width="8" height="4" rx="1" ry="1" />
+                            </svg>
+                            <span>Game Rules</span>
+                        </button>
+                    </nav>
+
+                    <div class="sidebar-back-box">
+                        <button class="btn-rulebook-back" onclick="navigateBackFromRulebook()" id="rulebook-back-btn">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <line x1="19" y1="12" x2="5" y2="12" />
+                                <polyline points="12 19 5 12 12 5" />
+                            </svg>
+                            <span>Back to Home</span>
+                        </button>
+                    </div>
+                </aside>
+
+                <!-- Main Rulebook Content Area -->
+                <main class="rulebook-main-content">
+                    <header class="rulebook-content-header">
+                        <h2>Chess Rulebook</h2>
+                        <p class="rulebook-lead">
+                            Learn the rules of chess, how each piece moves and captures, special moves, and the main
+                            concepts to help you play and enjoy the game.
+                        </p>
+                    </header>
+
+                    <!-- SECTION 1: THE PIECES (Featured) -->
+                    <section id="rules-pieces" class="rule-content-section active">
+                        <div class="section-title-bar">
+                            <span class="section-badge">1</span>
+                            <h3>The Pieces</h3>
+                        </div>
+                        <p class="section-subtitle">Chess is played with six different types of pieces. Each piece moves
+                            in a unique way.</p>
+
+                        <!-- 6 Realistic 3D Piece Cards in a Grid -->
+                        <div class="pieces-3d-grid">
+                            <!-- King -->
+                            <div class="piece-3d-card">
+                                <div class="piece-img-container">
+                                    <img src="assets/pieces_3d/king.png" alt="King" class="piece-render-img">
+                                </div>
+                                <h4 class="piece-card-title">King</h4>
+                                <p class="piece-card-summary">Moves one square in any direction.</p>
+                                <div class="piece-card-details">
+                                    <div class="detail-line"><strong>Capture:</strong> Replaces enemy piece 1 square
+                                        away.</div>
+                                    <div class="detail-line"><strong>Special:</strong> Cannot move into check. Castles
+                                        with Rook.</div>
+                                </div>
+                            </div>
+
+                            <!-- Queen -->
+                            <div class="piece-3d-card">
+                                <div class="piece-img-container">
+                                    <img src="assets/pieces_3d/queen.png" alt="Queen" class="piece-render-img">
+                                </div>
+                                <h4 class="piece-card-title">Queen</h4>
+                                <p class="piece-card-summary">Moves any number of squares in any direction.</p>
+                                <div class="piece-card-details">
+                                    <div class="detail-line"><strong>Capture:</strong> Takes first enemy piece along
+                                        line.</div>
+                                    <div class="detail-line"><strong>Special:</strong> Combines Rook and Bishop. Cannot
+                                        jump.</div>
+                                </div>
+                            </div>
+
+                            <!-- Rook -->
+                            <div class="piece-3d-card">
+                                <div class="piece-img-container">
+                                    <img src="assets/pieces_3d/rook.png" alt="Rook" class="piece-render-img">
+                                </div>
+                                <h4 class="piece-card-title">Rook</h4>
+                                <p class="piece-card-summary">Moves any number of squares horizontally or vertically.
+                                </p>
+                                <div class="piece-card-details">
+                                    <div class="detail-line"><strong>Capture:</strong> Takes first enemy piece along
+                                        rank or file.</div>
+                                    <div class="detail-line"><strong>Special:</strong> Participates in Castling with
+                                        King.</div>
+                                </div>
+                            </div>
+
+                            <!-- Bishop -->
+                            <div class="piece-3d-card">
+                                <div class="piece-img-container">
+                                    <img src="assets/pieces_3d/bishop.png" alt="Bishop" class="piece-render-img">
+                                </div>
+                                <h4 class="piece-card-title">Bishop</h4>
+                                <p class="piece-card-summary">Moves any number of squares diagonally.</p>
+                                <div class="piece-card-details">
+                                    <div class="detail-line"><strong>Capture:</strong> Takes first enemy piece along
+                                        diagonal.</div>
+                                    <div class="detail-line"><strong>Special:</strong> Always remains on its starting
+                                        color.</div>
+                                </div>
+                            </div>
+
+                            <!-- Knight -->
+                            <div class="piece-3d-card">
+                                <div class="piece-img-container">
+                                    <img src="assets/pieces_3d/knight.png" alt="Knight" class="piece-render-img">
+                                </div>
+                                <h4 class="piece-card-title">Knight</h4>
+                                <p class="piece-card-summary">Moves in an L-shape and can jump over other pieces.</p>
+                                <div class="piece-card-details">
+                                    <div class="detail-line"><strong>Capture:</strong> Takes piece on its landing
+                                        square.</div>
+                                    <div class="detail-line"><strong>Special:</strong> The only piece that leaps over
+                                        others.</div>
+                                </div>
+                            </div>
+
+                            <!-- Pawn -->
+                            <div class="piece-3d-card">
+                                <div class="piece-img-container">
+                                    <img src="assets/pieces_3d/pawn.png" alt="Pawn" class="piece-render-img">
+                                </div>
+                                <h4 class="piece-card-title">Pawn</h4>
+                                <p class="piece-card-summary">Moves forward, captures diagonally, and has special rules.
+                                </p>
+                                <div class="piece-card-details">
+                                    <div class="detail-line"><strong>Capture:</strong> 1 square diagonally forward.
+                                    </div>
+                                    <div class="detail-line"><strong>Special:</strong> Promotes on 8th rank. En Passant
+                                        capable.</div>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- SECTION 2: INTRODUCTION & OBJECTIVE -->
+                    <section id="rules-intro" class="rule-content-section">
+                        <div class="section-title-bar">
+                            <span class="section-badge">2</span>
+                            <h3>The Objective & Fundamentals</h3>
+                        </div>
+                        <div class="cards-layout-2col">
+                            <div class="refined-info-card">
+                                <h4>Objective of the Game</h4>
+                                <p>Chess is played between two opponents on an 8×8 board of 64 alternating squares.
+                                    White moves first, followed by Black. The primary objective is to
+                                    <strong>checkmate</strong> the enemy King.
+                                </p>
+                            </div>
+                            <div class="refined-info-card">
+                                <h4>Check vs. Checkmate</h4>
+                                <ul class="clean-bullet-list">
+                                    <li><strong>Check:</strong> The King is directly under attack. The player must
+                                        escape check immediately on that turn.</li>
+                                    <li><strong>Checkmate:</strong> The King is in check and has no legal move to
+                                        escape. The game ends immediately in victory for the attacker.</li>
+                                </ul>
+                            </div>
+                            <div class="refined-info-card">
+                                <h4>The Three Escapes from Check (CPR)</h4>
+                                <ul class="clean-bullet-list">
+                                    <li><strong>Capture:</strong> Capture the attacking enemy piece.</li>
+                                    <li><strong>Protect:</strong> Block the line of attack by placing a piece between
+                                        the checker and King.</li>
+                                    <li><strong>Run:</strong> Move the King to an unattacked square.</li>
+                                </ul>
+                            </div>
+                            <div class="refined-info-card">
+                                <h4>King Safety Restriction</h4>
+                                <p>A player can never make a move that exposes their own King to check or leaves their
+                                    King in check. Pinned pieces cannot move off the pin line if doing so reveals check.
+                                </p>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- SECTION 3: SPECIAL MOVES -->
+                    <section id="rules-special" class="rule-content-section">
+                        <div class="section-title-bar">
+                            <span class="section-badge">3</span>
+                            <h3>Special Moves</h3>
+                        </div>
+                        <div class="cards-layout-2col">
+                            <div class="refined-info-card">
+                                <h4>Castling (Kingside & Queenside)</h4>
+                                <p>A unique two-piece move providing King safety and Rook activation. The King moves two
+                                    squares toward a Rook, and the Rook hops over to the adjacent square.</p>
+                                <ul class="clean-bullet-list">
+                                    <li><strong>Kingside (O-O):</strong> King moves two squares right; Rook moves two
+                                        squares left.</li>
+                                    <li><strong>Queenside (O-O-O):</strong> King moves two squares left; Rook moves
+                                        three squares right.</li>
+                                    <li><strong>Conditions:</strong> Neither piece has moved prior; squares between them
+                                        are empty; King is not in check, nor passes through or lands on attacked
+                                        squares.</li>
+                                </ul>
+                            </div>
+                            <div class="refined-info-card">
+                                <h4>Pawn Promotion</h4>
+                                <p>When a pawn reaches the farthest rank (rank 8 for White, rank 1 for Black), it
+                                    immediately transforms into a <strong>Queen, Rook, Bishop, or Knight</strong>.</p>
+                                <p>Promotion is not limited to captured pieces; having multiple Queens is fully legal.
+                                </p>
+                            </div>
+                            <div class="refined-info-card">
+                                <h4>En Passant ("In Passing")</h4>
+                                <p>If an enemy pawn advances two squares on its initial move and lands directly adjacent
+                                    to your pawn, you may capture it diagonally behind on your immediate next turn as if
+                                    it had only moved one square.</p>
+                                <p><strong>Timing restriction:</strong> En passant must be played immediately on the
+                                    next turn or the right is permanently lost.</p>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- SECTION 4: DRAWS & ENDGAME -->
+                    <section id="rules-draws" class="rule-content-section">
+                        <div class="section-title-bar">
+                            <span class="section-badge">4</span>
+                            <h3>Draws & Endgame</h3>
+                        </div>
+                        <div class="cards-layout-2col">
+                            <div class="refined-info-card">
+                                <h4>Stalemate</h4>
+                                <p>Occurs when the player whose turn it is has no legal moves available, but their King
+                                    is <strong>not</strong> in check. The game immediately ends as a draw (½ - ½).</p>
+                            </div>
+                            <div class="refined-info-card">
+                                <h4>50-Move Rule & Threefold Repetition</h4>
+                                <ul class="clean-bullet-list">
+                                    <li><strong>50-Move Rule:</strong> If 50 consecutive moves occur with no pawn move
+                                        and no piece capture, either player can claim a draw.</li>
+                                    <li><strong>Threefold Repetition:</strong> If the exact same board position occurs
+                                        three times, the game is an automatic draw.</li>
+                                </ul>
+                            </div>
+                            <div class="refined-info-card">
+                                <h4>Insufficient Material</h4>
+                                <p>When neither side has enough pieces to legally force checkmate (e.g., King vs. King,
+                                    King + Bishop vs. King, or King + Knight vs. King), the match is immediately drawn.
+                                </p>
+                            </div>
+                            <div class="refined-info-card">
+                                <h4>Match Clocks & Inactivity Abort</h4>
+                                <ul class="clean-bullet-list">
+                                    <li><strong>10-Minute Clocks:</strong> Each player starts with 10:00. Time counts
+                                        down only on your turn. Reaching 0:00 loses on time.</li>
+                                    <li><strong>Inactivity Timer:</strong> If White makes no move within 30 seconds of
+                                        match start, the game automatically aborts (with an official warning at 15
+                                        seconds).</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- SECTION 5: GAME RULES & CONDUCT -->
+                    <section id="rules-conduct" class="rule-content-section">
+                        <div class="section-title-bar">
+                            <span class="section-badge">5</span>
+                            <h3>Game Rules & Fair Play</h3>
+                        </div>
+                        <div class="cards-layout-2col">
+                            <div class="refined-info-card">
+                                <h4>Authoritative Move Validation</h4>
+                                <p>All moves are validated in real time by the backend engine. Illegal moves are
+                                    rejected immediately, maintaining complete board integrity.</p>
+                            </div>
+                            <div class="refined-info-card">
+                                <h4>Resignation & Match Abort</h4>
+                                <p>Players may resign at any time during an active match. If an inactivity timeout
+                                    occurs before the first move, the match is safely aborted.</p>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- Bottom CTA Banner -->
+                    <div class="rulebook-bottom-cta">
+                        <div class="bottom-cta-text">
+                            <h3>Ready to Play?</h3>
+                            <p>Challenge an opponent in a live multiplayer match or enter spectator mode.</p>
+                        </div>
+                        <button class="btn-hero-primary" onclick="handlePlayClick()">
+                            <svg class="btn-icon-svg" viewBox="0 0 24 24" fill="currentColor">
+                                <polygon points="5 3 19 12 5 21 5 3" />
+                            </svg>
+                            <span>Play Match Now</span>
+                        </button>
+                    </div>
+                </main>
+            </div>
+        </section>
+
+        <!-- ==========================================
+             VIEW 3: IN-GAME INTERFACE
+             ========================================== -->
+        <section id="game-view" class="view-section hidden">
+            <div class="game-layout">
+                <div class="left-column">
+
+                    <div class="player-info">
+                        <span class="player-name">Black</span>
+                        <div class="clock" id="black-clock">10:00</div>
+                        <div id="BLACK-disconnect" class="disconnect-timer hidden"></div>
+                        <div class="captured-area" id="captured-by-black"></div>
+                    </div>
+
+                    <div class="board-with-coords">
+                        <div id="board-area">
+                            <div id="chessboard"></div>
+                        </div>
+                    </div>
+
+                    <div class="player-info">
+                        <span class="player-name">White</span>
+                        <div class="clock" id="white-clock">10:00</div>
+                        <div id="WHITE-disconnect" class="disconnect-timer hidden"></div>
+                        <div class="captured-area" id="captured-by-white"></div>
+                    </div>
+
+                </div>
+
+                <div id="sidebar">
+                    <h3>Match History</h3>
+                    <div id="move-log"></div>
+
+                    <div id="match-controls" class="hidden">
+                        <button id="btn-abort" onclick="sendAction('ABORT')">Abort Game</button>
+                        <button id="btn-resign" onclick="sendAction('RESIGN')">Resign</button>
+                    </div>
+
+                    <div class="history-controls">
+                        <button onclick="viewFirst()" title="First Move">|&lt;</button>
+                        <button onclick="viewPrevious()" title="Previous Move">&lt;</button>
+                        <button onclick="viewNext()" title="Next Move">&gt;</button>
+                        <button onclick="viewLive()" title="Live Game">&gt;|</button>
+                    </div>
+
+                    <!-- Game End Panel - shown when game is over -->
+                    <div id="game-end-panel" class="hidden">
+                        <h3 id="game-end-title">Game Over</h3>
+                        <div id="game-end-message"></div>
+                        <div id="game-end-actions"
+                            style="display: flex; gap: 12px; justify-content: center; margin-top: 16px;">
+                            <button id="btn-rematch" onclick="requestRematch()"
+                                style="padding:10px 20px; font-size:16px; font-weight: 600; cursor:pointer; background: linear-gradient(135deg, #34495e 0%, #2c3e50 100%); color: var(--text-on-accent); border: none; border-radius: var(--radius-md);">Rematch</button>
+                            <button id="btn-leave-table" onclick="leaveTable()"
+                                style="padding:10px 20px; font-size:16px; font-weight: 600; cursor:pointer; background: linear-gradient(135deg, #c0392b 0%, #a93226 100%); color: white; border: none; border-radius: var(--radius-md);">Leave
+                                Table</button>
+                        </div>
+                    </div>
+
+                    <div class="sidebar-settings">
+                        <label style="font-size: 14px; font-weight: bold; color: #bdc3c7;">Board Theme:</label>
+                        <div class="theme-swatches" id="theme-swatches">
+                            <button class="swatch wood" onclick="changeTheme('wood')" title="Classic Wood"></button>
+                            <button class="swatch ocean" onclick="changeTheme('ocean')" title="Ocean Blue"></button>
+                            <button class="swatch midnight" onclick="changeTheme('midnight')"
+                                title="Midnight Purple"></button>
+                        </div>
+                    </div>
+
+                    <div id="chat-container" class="collapsed">
+                        <!-- Clickable header — always visible, toggles the body -->
+                        <div id="chat-header" onclick="toggleChat()">
+                            <span>💬 Chat <span id="chat-unread"></span></span>
+                            <span id="chat-toggle-icon">▶</span>
                         </div>
 
-                        <div id="chat-input-area">
-                            <button id="emoji-toggle" title="Emojis">😀</button>
-                            <input type="text" id="chat-input" placeholder="Message opponent..." autocomplete="off">
-                            <button id="chat-send" title="Send">➤</button>
+                        <!-- Body — hidden when collapsed -->
+                        <div id="chat-body">
+                            <div id="chat-messages">
+                                <div class="chat-msg system">Welcome to the chat!</div>
+                            </div>
+
+                            <div id="emoji-picker" class="hidden">
+                                <span class="emoji">😀</span><span class="emoji">😂</span><span
+                                    class="emoji">😎</span><span class="emoji">😭</span>
+                                <span class="emoji">😡</span><span class="emoji">👍</span><span
+                                    class="emoji">👎</span><span class="emoji">🔥</span>
+                                <span class="emoji">🎉</span><span class="emoji">💀</span><span
+                                    class="emoji">👀</span><span class="emoji">🤝</span>
+                            </div>
+
+                            <div id="chat-input-area">
+                                <button id="emoji-toggle" title="Emojis">😀</button>
+                                <input type="text" id="chat-input" placeholder="Message opponent..." autocomplete="off">
+                                <button id="chat-send" title="Send">➤</button>
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
-            </div>
-        </div>
 
-        <div class="controls">
-            <h3 id="status">White's Turn</h3>
-        </div>
+            <div class="controls">
+                <h3 id="status">White's Turn</h3>
+            </div>
+        </section>
     </div>
 
     <div id="promotion-modal" class="hidden">
@@ -132,7 +646,7 @@
         <div id="overlay-message"></div>
     </div>
 
-    <!-- NEW: Custom Confirmation Modal -->
+    <!-- Custom Confirmation Modal -->
     <div id="confirm-modal" class="hidden">
         <div class="confirm-box">
             <h3 id="confirm-title">Are you sure?</h3>
@@ -157,4 +671,5 @@
 
     <script src="app.js"></script>
 </body>
+
 </html>

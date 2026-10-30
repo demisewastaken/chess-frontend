@@ -23,12 +23,50 @@
     <canvas id="bg-canvas"></canvas>
 
     <!-- Server wake-up / loading screen (shown only during active game entry) -->
-    <div id="loading-screen" class="hidden fade-out">
-        <div class="bouncing-pawn-wrap">
-            <img src="assets/brand_logo.png" class="bouncing-pawn-img" alt="Connecting">
+    <div id="loading-screen" class="hidden fade-out" role="dialog" aria-modal="true" aria-labelledby="loading-title">
+        <div class="loading-container">
+            <!-- 3D Rotating Pawn Stage -->
+            <div class="loading-pawn-stage">
+                <div class="loading-pawn-glow"></div>
+                <div class="loading-pawn-wrapper">
+                    <img src="assets/pieces_3d/pawn.png" class="rotating-3d-pawn" alt="Loading DiChess">
+                </div>
+                <div class="loading-pawn-pedestal"></div>
+            </div>
+
+            <!-- Active Connection State -->
+            <div id="loading-content-active">
+                <h2 id="loading-title">Waking up the game server...</h2>
+                <p id="loading-subtitle">Please wait while we establish a connection. This may take up to a minute on the first visit.</p>
+                
+                <div class="loading-status-pill">
+                    <span class="loading-status-dot"></span>
+                    <span id="loading-status-text">Connecting to DiChess server...</span>
+                </div>
+            </div>
+
+            <!-- Error / Timeout State (hidden by default) -->
+            <div id="loading-content-error" class="hidden">
+                <h2 class="loading-error-title">Connection Timeout</h2>
+                <p id="loading-error-desc">The game server is taking longer than expected to wake up. This typically occurs on Render free-tier cold starts.</p>
+                <div class="loading-actions">
+                    <button id="btn-loading-retry" class="btn-hero-primary" onclick="retryGameConnection()">
+                        <svg class="btn-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="23 4 23 10 17 10"></polyline>
+                            <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+                        </svg>
+                        <span>Retry Connection</span>
+                    </button>
+                    <button id="btn-loading-cancel" class="btn-hero-secondary" onclick="cancelGameConnection()">
+                        <svg class="btn-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="18" y1="6" x2="6" y2="18"></line>
+                            <line x1="6" y1="6" x2="18" y2="18"></line>
+                        </svg>
+                        <span>Return to Home</span>
+                    </button>
+                </div>
+            </div>
         </div>
-        <h2 id="loading-text">Connecting to Chess Server...</h2>
-        <p style="color: var(--text-secondary);">Entering match room and synchronizing clocks.</p>
     </div>
 
     <div class="main-container">

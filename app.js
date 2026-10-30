@@ -174,7 +174,7 @@ function handleAbortTimerState(abortState) {
 // ==========================================
 // 2. INITIALIZATION & LOBBY SYSTEM
 // ==========================================
-async function joinGame(isReturningSession = false) {
+async function joinGame(isReturningSession = false, signal = null) {
     try {
         let savedToken = localStorage.getItem("chessToken") || "";
         // If not restoring an active in-game session and saved token is SPECTATOR,
@@ -183,11 +183,12 @@ async function joinGame(isReturningSession = false) {
             savedToken = "";
         }
 
-        const response = await fetch(`${SERVER_URL}/join?token=${savedToken}`);
+        const fetchOptions = signal ? { signal } : {};
+        const response = await fetch(`${SERVER_URL}/join?token=${savedToken}`, fetchOptions);
+        if (!response.ok) {
+            return false;
+        }
         const tokenResponse = await response.text();
-
-        const loadingScreen = document.getElementById("loading-screen");
-        if (loadingScreen) loadingScreen.classList.add("fade-out");
 
         if (tokenResponse.startsWith("WHITE")) {
             myColor = "WHITE";
@@ -217,13 +218,14 @@ async function joinGame(isReturningSession = false) {
             displayOverlay(`<h2>Spectator Mode</h2><p style="font-size: 20px; color: var(--text-primary); margin-top: 12px;">You are watching a live match.</p>`);
             setTimeout(() => hideOverlay(), 3000);
         }
+
+        return true;
     } catch (error) {
-        const loadingText = document.getElementById("loading-text");
-        if (loadingText) {
-            loadingText.innerText = "Error: Server is currently offline.";
-            loadingText.style.color = "#e74c3c";
-            document.querySelector(".bouncing-pawn").style.animation = "none";
+        if (error.name === "AbortError") {
+            throw error; // Re-throw to be handled by enterGame caller
         }
+        console.error("Error in joinGame:", error);
+        return false;
     }
 }
 
@@ -239,6 +241,10 @@ async function declareReady() {
 }
 
 function connectWebSocket() {
+    if (stompClient && stompClient.connected) {
+        return;
+    }
+
     const socket = new SockJS(`${SERVER_URL}/ws`);
     stompClient = Stomp.over(socket);
     stompClient.debug = null;
@@ -1642,6 +1648,8 @@ function showView(viewName) {
     updatePlayButtonsText();
 
     if (viewName === "rulebook") {
+        const rbView = document.getElementById("rulebook-view");
+        if (rbView) rbView.scrollTop = 0;
         const rbMain = document.querySelector(".rulebook-main-content");
         if (rbMain) rbMain.scrollTop = 0;
     }
@@ -1674,9 +1682,22 @@ function switchRuleTab(tabName) {
         btn.classList.toggle("active", btn.getAttribute("data-tab") === tabName);
     });
 
+    const activeBtn = document.querySelector(`.rulebook-tab-btn[data-tab="${tabName}"]`);
+    if (activeBtn && typeof activeBtn.scrollIntoView === "function") {
+        activeBtn.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
+    }
+
     const targetSection = document.getElementById(`rules-${tabName}`);
     if (targetSection) {
-        targetSection.scrollIntoView({ behavior: "smooth", block: "start" });
+        const rbView = document.getElementById("rulebook-view");
+        if (window.innerWidth <= 900 && rbView) {
+            const sidebar = document.querySelector(".rulebook-sidebar");
+            const stickyOffset = sidebar ? sidebar.offsetHeight + 10 : 54;
+            const targetPos = targetSection.getBoundingClientRect().top + rbView.scrollTop - rbView.getBoundingClientRect().top - stickyOffset;
+            rbView.scrollTo({ top: Math.max(0, targetPos), behavior: "smooth" });
+        } else {
+            targetSection.scrollIntoView({ behavior: "smooth", block: "start" });
+        }
     }
 }
 
@@ -1688,7 +1709,46 @@ function navigateBackFromRulebook() {
     }
 }
 
+// Connection lifecycle state
+let isConnectingToGame = false;
+let connectionAbortController = null;
+let connectionStatusTimers = [];
+
+function updateLoadingStatus(text) {
+    const statusTextEl = document.getElementById("loading-status-text");
+    if (statusTextEl) {
+        statusTextEl.textContent = text;
+    }
+}
+
+function showLoadingErrorState(errorMsg) {
+    clearConnectionTimers();
+    const activeBox = document.getElementById("loading-content-active");
+    const errorBox = document.getElementById("loading-content-error");
+    const errorDesc = document.getElementById("loading-error-desc");
+    if (activeBox) activeBox.classList.add("hidden");
+    if (errorBox) errorBox.classList.remove("hidden");
+    if (errorDesc && errorMsg) errorDesc.textContent = errorMsg;
+}
+
+function resetLoadingActiveState() {
+    clearConnectionTimers();
+    const activeBox = document.getElementById("loading-content-active");
+    const errorBox = document.getElementById("loading-content-error");
+    if (activeBox) activeBox.classList.remove("hidden");
+    if (errorBox) errorBox.classList.add("hidden");
+    updateLoadingStatus("Connecting to DiChess server...");
+}
+
+function clearConnectionTimers() {
+    connectionStatusTimers.forEach(t => clearTimeout(t));
+    connectionStatusTimers = [];
+}
+
 async function handlePlayClick() {
+    if (isConnectingToGame) {
+        return;
+    }
     if (hasJoinedGame) {
         showView("game");
         return;
@@ -1697,30 +1757,110 @@ async function handlePlayClick() {
 }
 
 async function enterGame() {
+    if (isConnectingToGame) {
+        return;
+    }
+    isConnectingToGame = true;
+
     const loadingScreen = document.getElementById("loading-screen");
+    resetLoadingActiveState();
     if (loadingScreen) {
         loadingScreen.classList.remove("fade-out");
         loadingScreen.classList.remove("hidden");
     }
 
-    const wasInGameSession = sessionStorage.getItem("chess_in_game") === "true";
-    sessionStorage.setItem("chess_in_game", "true");
-    hasJoinedGame = true;
+    // Progressive status updates reflecting actual backend cold-start milestones
+    clearConnectionTimers();
+    connectionStatusTimers.push(
+        setTimeout(() => {
+            updateLoadingStatus("Waking up the game server...");
+        }, 5000)
+    );
+    connectionStatusTimers.push(
+        setTimeout(() => {
+            updateLoadingStatus("Waking up the game server (Render spin-up)...");
+        }, 15000)
+    );
+    connectionStatusTimers.push(
+        setTimeout(() => {
+            updateLoadingStatus("Almost ready, initializing match environment...");
+        }, 30000)
+    );
 
-    showView("game");
+    connectionAbortController = new AbortController();
+    const timeoutId = setTimeout(() => {
+        if (connectionAbortController) {
+            connectionAbortController.abort();
+        }
+    }, 55000);
+
+    const wasInGameSession = sessionStorage.getItem("chess_in_game") === "true";
 
     try {
-        await joinGame(wasInGameSession);
+        const joinSuccess = await joinGame(wasInGameSession, connectionAbortController.signal);
+        clearTimeout(timeoutId);
+        clearConnectionTimers();
+
+        if (!joinSuccess) {
+            showLoadingErrorState("The server did not respond as expected. Please check your connection or retry.");
+            isConnectingToGame = false;
+            return;
+        }
+
+        updateLoadingStatus("Establishing secure connection...");
         connectWebSocket();
-        fetchBoard();
-    } catch (e) {
-        console.error("Error entering game:", e);
-    } finally {
+
+        updateLoadingStatus("Synchronizing match board and clocks...");
+        await fetchBoard();
+
+        sessionStorage.setItem("chess_in_game", "true");
+        hasJoinedGame = true;
+
+        showView("game");
+
         if (loadingScreen) {
             loadingScreen.classList.add("fade-out");
-            setTimeout(() => loadingScreen.classList.add("hidden"), 300);
+            setTimeout(() => {
+                loadingScreen.classList.add("hidden");
+                resetLoadingActiveState();
+            }, 350);
         }
+    } catch (e) {
+        clearTimeout(timeoutId);
+        clearConnectionTimers();
+        console.error("Error entering game:", e);
+        if (e.name === "AbortError") {
+            showLoadingErrorState("The game server is taking longer than expected to wake up. Render cold-starts may take up to a minute on the first visit.");
+        } else {
+            showLoadingErrorState("Unable to reach the chess server. Please check your network connection and retry.");
+        }
+    } finally {
+        isConnectingToGame = false;
     }
+}
+
+function retryGameConnection() {
+    isConnectingToGame = false;
+    enterGame();
+}
+
+function cancelGameConnection() {
+    if (connectionAbortController) {
+        connectionAbortController.abort();
+        connectionAbortController = null;
+    }
+    clearConnectionTimers();
+    isConnectingToGame = false;
+
+    const loadingScreen = document.getElementById("loading-screen");
+    if (loadingScreen) {
+        loadingScreen.classList.add("fade-out");
+        setTimeout(() => {
+            loadingScreen.classList.add("hidden");
+            resetLoadingActiveState();
+        }, 300);
+    }
+    showView("landing");
 }
 
 function initLandingShowcaseBoard() {
@@ -1762,9 +1902,11 @@ function initLandingShowcaseBoard() {
     }
 }
 
-// Expose navigation and abort functions to window
+// Expose navigation, connection and abort functions to window
 window.showView = showView;
 window.handlePlayClick = handlePlayClick;
+window.retryGameConnection = retryGameConnection;
+window.cancelGameConnection = cancelGameConnection;
 window.navigateBackFromRulebook = navigateBackFromRulebook;
 window.switchRuleTab = switchRuleTab;
 window.handleAbortTimerState = handleAbortTimerState;

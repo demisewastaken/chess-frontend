@@ -615,14 +615,37 @@
                     <div id="game-end-panel" class="hidden">
                         <h3 id="game-end-title">Game Over</h3>
                         <div id="game-end-message"></div>
-                        <div id="game-end-actions"
-                            style="display: flex; gap: 12px; justify-content: center; margin-top: 16px;">
-                            <button id="btn-rematch" onclick="requestRematch()"
-                                style="padding:10px 20px; font-size:16px; font-weight: 600; cursor:pointer; background: linear-gradient(135deg, #34495e 0%, #2c3e50 100%); color: var(--text-on-accent); border: none; border-radius: var(--radius-md);">Rematch</button>
-                            <button id="btn-leave-table" onclick="leaveTable()"
-                                style="padding:10px 20px; font-size:16px; font-weight: 600; cursor:pointer; background: linear-gradient(135deg, #c0392b 0%, #a93226 100%); color: white; border: none; border-radius: var(--radius-md);">Leave
-                                Table</button>
+                        <!-- Default Rematch & Leave Actions -->
+                        <div id="rematch-default-actions" class="rematch-actions-row">
+                            <button id="btn-rematch" onclick="handleRematchClick()">Rematch</button>
+                            <button id="btn-leave-table" onclick="leaveTable()">Leave Table</button>
                         </div>
+
+                        <!-- Rematch Sent Status (Requester Waiting Card) -->
+                        <div id="rematch-sent-status" class="hidden rematch-status-card">
+                            <div class="rematch-status-header">
+                                <span class="rematch-spinner"></span>
+                                <span class="rematch-status-text">Rematch requested. Waiting for opponent...</span>
+                                <span id="rematch-sent-countdown" class="rematch-countdown-badge">15s</span>
+                            </div>
+                            <button id="btn-cancel-rematch" onclick="cancelRematchRequest()" class="btn-rematch-cancel">Cancel Request</button>
+                        </div>
+
+                        <!-- Rematch Received Card (Opponent Incoming Proposal Card) -->
+                        <div id="rematch-received-card" class="hidden rematch-proposal-card">
+                            <div class="rematch-proposal-header">
+                                <span class="rematch-pulse-dot"></span>
+                                <span id="rematch-received-title" class="rematch-proposal-title">Opponent wants a rematch!</span>
+                                <span id="rematch-received-countdown" class="rematch-countdown-badge">15s</span>
+                            </div>
+                            <div class="rematch-proposal-actions">
+                                <button id="btn-accept-rematch" onclick="acceptRematchRequest()" class="btn-rematch-accept">Accept Rematch</button>
+                                <button id="btn-decline-rematch" onclick="declineRematchRequest()" class="btn-rematch-decline">Decline</button>
+                            </div>
+                        </div>
+
+                        <!-- Ephemeral Feedback Notice (Decline, Cancel, Expire) -->
+                        <div id="rematch-feedback-msg" class="hidden rematch-feedback-message"></div>
                     </div>
 
                     <div class="sidebar-settings">
@@ -648,15 +671,6 @@
                                 <div class="chat-msg system">Welcome to the chat!</div>
                             </div>
 
-                            <div id="emoji-picker" class="hidden">
-                                <span class="emoji">😀</span><span class="emoji">😂</span><span
-                                    class="emoji">😎</span><span class="emoji">😭</span>
-                                <span class="emoji">😡</span><span class="emoji">👍</span><span
-                                    class="emoji">👎</span><span class="emoji">🔥</span>
-                                <span class="emoji">🎉</span><span class="emoji">💀</span><span
-                                    class="emoji">👀</span><span class="emoji">🤝</span>
-                            </div>
-
                             <div id="chat-input-area">
                                 <button id="emoji-toggle" title="Emojis">😀</button>
                                 <input type="text" id="chat-input" placeholder="Message opponent..." autocomplete="off">
@@ -671,6 +685,13 @@
                 <h3 id="status">White's Turn</h3>
             </div>
         </section>
+    </div>
+
+    <!-- Floating Emoji Picker Popup -->
+    <div id="emoji-picker" class="hidden">
+        <span class="emoji">😀</span><span class="emoji">😂</span><span class="emoji">😎</span><span class="emoji">😭</span>
+        <span class="emoji">😡</span><span class="emoji">👍</span><span class="emoji">👎</span><span class="emoji">🔥</span>
+        <span class="emoji">🎉</span><span class="emoji">💀</span><span class="emoji">👀</span><span class="emoji">🤝</span>
     </div>
 
     <div id="promotion-modal" class="hidden">

@@ -7,7 +7,7 @@ const sfxEnd     = new Audio('https://images.chesscomfiles.com/chess-themes/soun
 const sfxCheck   = new Audio('https://images.chesscomfiles.com/chess-themes/sounds/_MP3_/default/move-check.mp3');
 const sfxWin     = new Audio('https://images.chesscomfiles.com/chess-themes/sounds/_MP3_/default/game-end.mp3');
 
-const isLocal = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+const isLocal = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1" || window.location.protocol === "file:";
 const PROD_BACKEND_URL = "https://dichess.onrender.com";
 const SERVER_URL = isLocal ? "http://localhost:8080" : PROD_BACKEND_URL;
 
@@ -177,18 +177,15 @@ function handleAbortTimerState(abortState) {
 async function joinGame(isReturningSession = false, signal = null) {
     try {
         let savedToken = localStorage.getItem("chessToken") || "";
-        // If not restoring an active in-game session and saved token is SPECTATOR,
-        // clear savedToken so the visitor can claim White/Black if a seat is open
-        if (!isReturningSession && savedToken === "SPECTATOR") {
-            savedToken = "";
-        }
 
         const fetchOptions = signal ? { signal } : {};
-        const response = await fetch(`${SERVER_URL}/join?token=${savedToken}`, fetchOptions);
+        const response = await fetch(`${SERVER_URL}/join?token=${encodeURIComponent(savedToken)}`, fetchOptions);
         if (!response.ok) {
             return false;
         }
         const tokenResponse = await response.text();
+
+        const previousColor = myColor;
 
         if (tokenResponse.startsWith("WHITE")) {
             myColor = "WHITE";
@@ -198,7 +195,19 @@ async function joinGame(isReturningSession = false, signal = null) {
             localStorage.setItem("chessToken", tokenResponse);
         } else {
             myColor = "SPECTATOR";
-            localStorage.setItem("chessToken", "SPECTATOR");
+            localStorage.setItem("chessToken", tokenResponse.startsWith("SPECTATOR") ? tokenResponse : "SPECTATOR");
+        }
+
+        // If promoted from SPECTATOR to a playing participant, ensure socket reconnects with new player color
+        if (previousColor === "SPECTATOR" && (myColor === "WHITE" || myColor === "BLACK")) {
+            if (stompClient) {
+                try {
+                    stompClient.disconnect();
+                } catch (e) {
+                    // ignore disconnect error
+                }
+                stompClient = null;
+            }
         }
 
         const leftColumn = document.querySelector(".left-column");
@@ -210,13 +219,28 @@ async function joinGame(isReturningSession = false, signal = null) {
             }
         }
 
+        const matchControls = document.getElementById("match-controls");
         if (myColor !== "SPECTATOR") {
             updateStatusUI(`You are playing as: ${myColor}`);
-            displayOverlay(`<h2>Welcome, ${myColor}</h2><br><button onclick="declareReady()" style="padding:10px 20px; font-size:18px; cursor:pointer;">I am Ready</button>`);
+            displayOverlay(`
+                <h2>Welcome, ${myColor}</h2>
+                <div class="overlay-actions">
+                    <button class="btn-overlay-primary" onclick="declareReady()">I am Ready</button>
+                    <button class="btn-overlay-secondary" onclick="leaveTableFromReadiness()">Leave Table</button>
+                </div>
+            `);
+            if (matchControls) {
+                matchControls.classList.remove("hidden");
+                const abortBtn = document.getElementById("btn-abort");
+                if (abortBtn) abortBtn.classList.remove("hidden");
+            }
         } else {
             updateStatusUI("Spectating Live Match...");
             displayOverlay(`<h2>Spectator Mode</h2><p style="font-size: 20px; color: var(--text-primary); margin-top: 12px;">You are watching a live match.</p>`);
             setTimeout(() => hideOverlay(), 3000);
+            if (matchControls) {
+                matchControls.classList.add("hidden");
+            }
         }
 
         return true;
@@ -236,8 +260,65 @@ async function declareReady() {
         await requestRematch();
         return;
     }
-    displayOverlay("Waiting for opponent to ready up...");
+    displayOverlay(`
+        <p class="overlay-waiting-text">Waiting for opponent to ready up...</p>
+        <div class="overlay-actions">
+            <button class="btn-overlay-secondary" onclick="leaveTableFromReadiness()">Leave Table</button>
+        </div>
+    `);
     await fetch(`${SERVER_URL}/ready?color=${myColor}`);
+}
+
+function leaveTableFromReadiness() {
+    const token = localStorage.getItem("chessToken");
+    const departingColor = myColor;
+
+    if (departingColor && departingColor !== "SPECTATOR" && token) {
+        const url = `${SERVER_URL}/player/leave?token=${encodeURIComponent(token)}&color=${encodeURIComponent(departingColor)}`;
+        fetch(url).catch(err => console.error("Error leaving table from readiness:", err));
+    }
+
+    // Immediately disconnect WebSocket so client session is fully detached
+    if (stompClient) {
+        try {
+            stompClient.disconnect();
+        } catch (e) {
+            console.log("WebSocket disconnect on leave:", e);
+        }
+        stompClient = null;
+    }
+
+    // Completely clear that player's previous session credentials and lobby-related client state
+    localStorage.removeItem("chessToken");
+    sessionStorage.removeItem("chess_in_game");
+
+    // Clear all in-memory game & player state
+    hasJoinedGame = false;
+    myColor = "SPECTATOR";
+    matchStarted = false;
+    isGameOverLock = false;
+    boardHistory = [INITIAL_BOARD];
+    currentViewIndex = -1;
+    moveCounter = 1;
+    selectedSquare = null;
+    lastPlayedMove = null;
+    lastKnownStatus = "White's Turn";
+    serverWhiteTimeMs = 600000;
+    serverBlackTimeMs = 600000;
+    clearInterval(timerInterval);
+    clearAbortCountdown();
+    resetRematchUI();
+
+    // Reset visual presentation
+    drawBoard(INITIAL_BOARD);
+    clearValidMoves();
+    const moveLog = document.getElementById("move-log");
+    if (moveLog) moveLog.innerHTML = "";
+    const chatMessages = document.getElementById("chat-messages");
+    if (chatMessages) chatMessages.innerHTML = "";
+    hideOverlay();
+    updatePlayButtonsText();
+    showView('landing');
 }
 
 function connectWebSocket() {
@@ -349,6 +430,24 @@ function connectWebSocket() {
                 if (blackTimer) blackTimer.classList.add("hidden");
             }
 
+            // --- REMATCH EVENTS ---
+            if (data.type === "REMATCH_REQUESTED") {
+                handleRematchRequested(data.rematchState || data);
+                return;
+            }
+            if (data.type === "REMATCH_DECLINED") {
+                handleRematchDeclined(data.declinedBy);
+                return;
+            }
+            if (data.type === "REMATCH_CANCELLED") {
+                handleRematchCancelled(data.cancelledBy);
+                return;
+            }
+            if (data.type === "REMATCH_EXPIRED") {
+                handleRematchExpired();
+                return;
+            }
+
             if (data.type === "RESET")      executeLocalReset();
             else if (data.type === "START") startOfficialMatch(data);
             else if (data.type === "MOVE")  executeLiveMoveUpdate(data);
@@ -393,6 +492,7 @@ function startOfficialMatch(data) {
     clearInterval(timerInterval);
     hideAbortWarning();
     hideOverlay();
+    resetRematchUI();
     document.getElementById("game-end-panel").classList.add("hidden");
     document.getElementById("move-log").innerHTML = "";
 
@@ -582,6 +682,7 @@ function executeLocalReset() {
     isGameOverLock = false;
     document.getElementById("match-controls").classList.add("hidden");
     document.getElementById("game-end-panel").classList.add("hidden");
+    resetRematchUI();
     clearInterval(timerInterval);
     hideAbortWarning();
 
@@ -624,9 +725,165 @@ async function leaveTable() {
 
 async function resetGame() { await fetch(`${SERVER_URL}/reset`); }
 
-// Player-specific rematch request (does NOT globally reset the game)
-async function requestRematch() {
-    await fetch(`${SERVER_URL}/rematch?color=${myColor}`);
+// ==========================================
+// MUTUAL REMATCH CONFIRMATION SYSTEM
+// ==========================================
+let rematchCountdownInterval = null;
+let rematchFeedbackTimeout = null;
+
+async function handleRematchClick() {
+    if (myColor === "SPECTATOR") return;
+    try {
+        const response = await fetch(`${SERVER_URL}/rematch/request?color=${myColor}`);
+        const data = await response.json();
+        if (data.status === "PENDING" && data.rematchState) {
+            handleRematchRequested(data.rematchState);
+        }
+    } catch (e) {
+        console.error("Failed to request rematch:", e);
+    }
+}
+
+async function acceptRematchRequest() {
+    if (myColor === "SPECTATOR") return;
+    try {
+        const response = await fetch(`${SERVER_URL}/rematch/accept?color=${myColor}`);
+        const data = await response.json();
+        if (data.matchStarted) {
+            resetRematchUI();
+        }
+    } catch (e) {
+        console.error("Failed to accept rematch:", e);
+    }
+}
+
+async function declineRematchRequest() {
+    if (myColor === "SPECTATOR") return;
+    try {
+        await fetch(`${SERVER_URL}/rematch/decline?color=${myColor}`);
+    } catch (e) {
+        console.error("Failed to decline rematch:", e);
+    }
+}
+
+async function cancelRematchRequest() {
+    if (myColor === "SPECTATOR") return;
+    try {
+        await fetch(`${SERVER_URL}/rematch/cancel?color=${myColor}`);
+    } catch (e) {
+        console.error("Failed to cancel rematch:", e);
+    }
+}
+
+function handleRematchRequested(rematchState) {
+    if (myColor === "SPECTATOR") return;
+    if (!rematchState) return;
+
+    const { requester, target, deadline } = rematchState;
+
+    clearInterval(rematchCountdownInterval);
+    rematchCountdownInterval = null;
+    clearTimeout(rematchFeedbackTimeout);
+
+    const feedbackEl = document.getElementById("rematch-feedback-msg");
+    if (feedbackEl) feedbackEl.classList.add("hidden");
+
+    const defaultActions = document.getElementById("rematch-default-actions");
+    const sentStatus = document.getElementById("rematch-sent-status");
+    const receivedCard = document.getElementById("rematch-received-card");
+
+    if (myColor === requester) {
+        // Requester view: waiting status with countdown and cancel button
+        if (defaultActions) defaultActions.classList.add("hidden");
+        if (receivedCard) receivedCard.classList.add("hidden");
+        if (sentStatus) sentStatus.classList.remove("hidden");
+
+        startRematchCountdown("rematch-sent-countdown", deadline);
+    } else if (myColor === target) {
+        // Opponent view: incoming proposal card with accept and decline buttons
+        if (defaultActions) defaultActions.classList.add("hidden");
+        if (sentStatus) sentStatus.classList.add("hidden");
+        if (receivedCard) {
+            const titleEl = document.getElementById("rematch-received-title");
+            if (titleEl) {
+                const requesterName = requester === "WHITE" ? "White" : "Black";
+                titleEl.innerText = `${requesterName} wants a rematch!`;
+            }
+            receivedCard.classList.remove("hidden");
+        }
+
+        startRematchCountdown("rematch-received-countdown", deadline);
+    }
+}
+
+function handleRematchDeclined(declinedBy) {
+    resetRematchUI();
+    showRematchFeedback("Opponent declined the rematch.");
+}
+
+function handleRematchCancelled(cancelledBy) {
+    resetRematchUI();
+    showRematchFeedback("Rematch request was cancelled.");
+}
+
+function handleRematchExpired() {
+    resetRematchUI();
+    showRematchFeedback("Rematch request expired.");
+}
+
+function resetRematchUI() {
+    clearInterval(rematchCountdownInterval);
+    rematchCountdownInterval = null;
+
+    const defaultActions = document.getElementById("rematch-default-actions");
+    const sentStatus = document.getElementById("rematch-sent-status");
+    const receivedCard = document.getElementById("rematch-received-card");
+
+    if (sentStatus) sentStatus.classList.add("hidden");
+    if (receivedCard) receivedCard.classList.add("hidden");
+
+    if (defaultActions) {
+        defaultActions.classList.remove("hidden");
+        const btnRematch = document.getElementById("btn-rematch");
+        if (btnRematch) {
+            if (myColor === "SPECTATOR") btnRematch.classList.add("hidden");
+            else btnRematch.classList.remove("hidden");
+        }
+    }
+}
+
+function showRematchFeedback(text) {
+    const feedbackEl = document.getElementById("rematch-feedback-msg");
+    if (!feedbackEl) return;
+    clearTimeout(rematchFeedbackTimeout);
+    feedbackEl.innerText = text;
+    feedbackEl.classList.remove("hidden");
+    rematchFeedbackTimeout = setTimeout(() => {
+        feedbackEl.classList.add("hidden");
+    }, 4500);
+}
+
+function startRematchCountdown(elementId, deadline) {
+    const badge = document.getElementById(elementId);
+    if (!badge || !deadline) return;
+
+    function update() {
+        const msLeft = Math.max(0, deadline - Date.now());
+        const secLeft = Math.ceil(msLeft / 1000);
+        badge.innerText = `${secLeft}s`;
+        if (msLeft <= 0) {
+            clearInterval(rematchCountdownInterval);
+            rematchCountdownInterval = null;
+        }
+    }
+
+    update();
+    rematchCountdownInterval = setInterval(update, 250);
+}
+
+// Backwards-compatible alias
+function requestRematch() {
+    handleRematchClick();
 }
 
 // ==========================================
@@ -712,13 +969,15 @@ async function fetchBoard() {
         document.getElementById("move-log").innerHTML = "";
         moveCounter = 1;
 
-        // Only trust moveHistory if the server says a match is currently active.
-        // If matchStarted is false, the moveHistory may contain stale data from a previous game
-        // (since backend resetGame() now clears it, but this is a defensive check).
-        const isMatchActive = data.matchStarted === true;
+        // Restore move history and algebraic notation if the match is currently active OR has ended.
+        // Terminal status (CHECKMATE, RESIGNATION, ABORT, etc.) or matchEnded indicates a completed match
+        // whose history should be fully available for post-game inspection and previous/next navigation.
+        const rawStatusUpper = (data.status || "").toUpperCase();
+        const isTerminalStatus = isGameOverStatus(rawStatusUpper);
+        const shouldRestoreHistory = (data.matchStarted === true || data.matchEnded === true || isTerminalStatus);
         boardHistory = [INITIAL_BOARD];
 
-        if (isMatchActive && data.moveHistory && data.moveHistory.length > 0) {
+        if (shouldRestoreHistory && data.moveHistory && data.moveHistory.length > 0) {
             const lastMove = data.moveHistory[data.moveHistory.length - 1];
             lastPlayedMove = { startX: lastMove.startX, startY: lastMove.startY, endX: lastMove.endX, endY: lastMove.endY };
 
@@ -737,7 +996,7 @@ async function fetchBoard() {
         const chatMessagesDiv = document.getElementById("chat-messages");
         if (chatMessagesDiv) {
             chatMessagesDiv.innerHTML = ""; // Clear existing messages to avoid duplicates
-            if (isMatchActive && data.chatHistory && data.chatHistory.length > 0) {
+            if (shouldRestoreHistory && data.chatHistory && data.chatHistory.length > 0) {
                 data.chatHistory.forEach(chat => {
                     // Use the same rendering logic as live messages
                     const msgDiv = document.createElement("div");
@@ -762,15 +1021,10 @@ async function fetchBoard() {
         const statusUpper = lastKnownStatus.toUpperCase();
         const isGameOver = isGameOverStatus(statusUpper);
 
-        // Check if current player has opted into next match (via new sync fields)
-        const whiteWantsRematch = data.whiteWantsRematch === true;
-        const blackWantsRematch = data.blackWantsRematch === true;
-        const iOptedIn = myColor === "WHITE" ? whiteWantsRematch : blackWantsRematch;
-        const opponentOptedIn = myColor === "WHITE" ? blackWantsRematch : whiteWantsRematch;
-
         if (isGameOver) {
             matchStarted = false;
             clearInterval(timerInterval);
+            hideOverlay();
             const matchControls = document.getElementById("match-controls");
             if (matchControls) matchControls.classList.add("hidden");
 
@@ -779,52 +1033,14 @@ async function fetchBoard() {
                 isGameOverLock = true;
             }
 
-            // If current player has opted in but opponent hasn't, show "Waiting for opponent..."
-            // If current player hasn't opted in, show Welcome screen with "I am Ready" button
-            // If both have opted in, START message will arrive soon, we'll handle it in startOfficialMatch
-            // iOptedIn and opponentOptedIn already declared above
-
-            // Determine UI state based on participation:
-            // A. I opted in, opponent hasn't -> I WAIT
-            // B. I didn't opt in, opponent did -> I ANALYZE (stay on ended board)
-            // C. Both opted in -> START coming, hide overlay
-            // D. Neither opted in -> normal ended-game analysis state
-            // E. Refreshed after game end -> show Welcome (no analysis state)
-
-            // Track if this is a fresh load (no prior analysis view)
-            // If boardHistory has only INITIAL_BOARD and moveCounter === 1, we're in "Welcome" state
-            // Otherwise we're in "analysis" state
-            const isAnalyzingEndedGame = boardHistory.length > 1 || moveCounter > 1;
-
-            if (iOptedIn && !opponentOptedIn) {
-                // A. I opted in, opponent hasn't -> I WAIT
-                displayOverlay("Waiting for opponent to be ready...");
-            } else if (iOptedIn && opponentOptedIn) {
-                // C. Both opted in -> START coming, hide overlay
-                hideOverlay();
-            } else if (!iOptedIn && opponentOptedIn) {
-                // B. Opponent opted in, I didn't -> I REMAIN ANALYZING
-                // Do NOT show overlay, keep ended board visible
-                // Show subtle indicator that opponent wants rematch (optional)
-                // Just ensure overlay is hidden if it was showing waiting
-                hideOverlay();
-            } else if (!iOptedIn && !opponentOptedIn) {
-                // D. Neither opted in
-                if (isAnalyzingEndedGame) {
-                    // Still analyzing - keep ended board, no overlay
-                    hideOverlay();
-                } else {
-                    // E. Fresh load/refresh - show Welcome with I AM READY
-                    if (myColor !== "SPECTATOR") {
-                        displayOverlay(`<h2>Welcome, ${myColor}</h2><br><button onclick="declareReady()" style="padding:10px 20px; font-size:18px; cursor:pointer;">I am Ready</button>`);
-                    } else {
-                        updateStatusUI("Spectating finished match...");
-                    }
-                }
-            }
-
             showGameEndPanel(lastKnownStatus, false); // refresh/restore → no popup
 
+            // Synchronize rematch state from backend (reconnection recovery)
+            if (data.rematchState && data.rematchState.status === "PENDING") {
+                handleRematchRequested(data.rematchState);
+            } else {
+                resetRematchUI();
+            }
         } else {
             clearInterval(timerInterval);
 
@@ -835,7 +1051,16 @@ async function fetchBoard() {
 
             if (myColor !== "SPECTATOR") {
                 matchStarted = data.matchStarted;
-                if (matchStarted) hideOverlay();
+                if (matchStarted) {
+                    hideOverlay();
+                } else if ((myColor === "WHITE" && data.whiteReady) || (myColor === "BLACK" && data.blackReady)) {
+                    displayOverlay(`
+                        <p class="overlay-waiting-text">Waiting for opponent to ready up...</p>
+                        <div class="overlay-actions">
+                            <button class="btn-overlay-secondary" onclick="leaveTableFromReadiness()">Leave Table</button>
+                        </div>
+                    `);
+                }
 
                 const matchControls = document.getElementById("match-controls");
                 const abortBtn = document.getElementById("btn-abort");
@@ -948,6 +1173,16 @@ function showGameEndPanel(rawStatus, showPopup = false) {
     document.getElementById("game-end-title").innerText = title;
     document.getElementById("game-end-message").innerText = message;
     document.getElementById("game-end-panel").classList.remove("hidden");
+
+    // Spectators cannot participate in rematches
+    const rematchBtn = document.getElementById("btn-rematch");
+    if (rematchBtn) {
+        if (myColor === "SPECTATOR") {
+            rematchBtn.classList.add("hidden");
+        } else {
+            rematchBtn.classList.remove("hidden");
+        }
+    }
 
     // Show temporary popup notification (only on live game-end transition)
     if (showPopup) {
@@ -1400,23 +1635,55 @@ function updateMaterial(grid) {
 
 function renderCapturedPieces(containerId, pieces, advantage) {
     const container = document.getElementById(containerId);
+    if (!container) return;
     container.innerHTML = "";
 
-    if (pieces.length === 0 && !advantage) {
+    if ((!pieces || pieces.length === 0) && !advantage) {
         container.style.display = "none";
         return;
     } else {
         container.style.display = "flex";
     }
 
-    const sortOrder = { 'Q': 1, 'R': 2, 'B': 3, 'N': 4, 'P': 5 };
-    pieces.sort((a, b) => sortOrder[a[1]] - sortOrder[b[1]]);
+    // Group captured piece counts by piece code (e.g., 'wP': 6, 'wN': 2)
+    const counts = {};
+    if (Array.isArray(pieces)) {
+        pieces.forEach(p => {
+            if (p) counts[p] = (counts[p] || 0) + 1;
+        });
+    }
 
-    pieces.forEach(p => {
+    // Standard piece order: Pawns, Knights, Bishops, Rooks, Queens
+    const sortOrder = { 'P': 1, 'N': 2, 'B': 3, 'R': 4, 'Q': 5 };
+    const uniquePieces = Object.keys(counts).sort((a, b) => {
+        const orderA = sortOrder[a[1]] || 99;
+        const orderB = sortOrder[b[1]] || 99;
+        return orderA - orderB;
+    });
+
+    uniquePieces.forEach(p => {
+        const count = counts[p];
+        if (count <= 0) return;
+
+        const groupDiv = document.createElement("div");
+        groupDiv.className = "captured-group";
+        groupDiv.setAttribute("data-piece", p);
+        groupDiv.setAttribute("data-count", count);
+
         const img = document.createElement("img");
         img.src = pieceImages[p];
+        img.alt = p;
         img.className = 'captured-piece ' + (p[0] === 'w' ? 'captured-white' : 'captured-black');
-        container.appendChild(img);
+        groupDiv.appendChild(img);
+
+        if (count > 1) {
+            const badge = document.createElement("span");
+            badge.className = "captured-qty-badge";
+            badge.innerText = count;
+            groupDiv.appendChild(badge);
+        }
+
+        container.appendChild(groupDiv);
     });
 
     if (advantage) {
@@ -1749,7 +2016,10 @@ async function handlePlayClick() {
     if (isConnectingToGame) {
         return;
     }
-    if (hasJoinedGame) {
+    const savedToken = localStorage.getItem("chessToken");
+    // Spectators must always re-evaluate role with the backend when clicking Play Match
+    const hasActivePlayerSession = hasJoinedGame && savedToken && (savedToken.startsWith("WHITE") || savedToken.startsWith("BLACK"));
+    if (hasActivePlayerSession) {
         showView("game");
         return;
     }
@@ -1761,6 +2031,13 @@ async function enterGame() {
         return;
     }
     isConnectingToGame = true;
+
+    // Reset board and view state before join confirmation to ensure no stale board is shown
+    hasJoinedGame = false;
+    drawBoard(INITIAL_BOARD);
+    boardHistory = [INITIAL_BOARD];
+    currentViewIndex = -1;
+    moveCounter = 1;
 
     const loadingScreen = document.getElementById("loading-screen");
     resetLoadingActiveState();
@@ -1815,6 +2092,7 @@ async function enterGame() {
 
         sessionStorage.setItem("chess_in_game", "true");
         hasJoinedGame = true;
+        updatePlayButtonsText();
 
         showView("game");
 
@@ -1911,6 +2189,11 @@ window.navigateBackFromRulebook = navigateBackFromRulebook;
 window.switchRuleTab = switchRuleTab;
 window.handleAbortTimerState = handleAbortTimerState;
 window.clearAbortCountdown = clearAbortCountdown;
+window.handleRematchClick = handleRematchClick;
+window.acceptRematchRequest = acceptRematchRequest;
+window.declineRematchRequest = declineRematchRequest;
+window.cancelRematchRequest = cancelRematchRequest;
+window.requestRematch = handleRematchClick;
 
 // ==========================================
 // 8. START THE APP
@@ -1918,8 +2201,13 @@ window.clearAbortCountdown = clearAbortCountdown;
 (function init() {
     initLandingShowcaseBoard();
 
-    // Every full page load must initially display the landing page
-    showView("landing");
+    // If refreshing during an active in-game session, automatically re-evaluate role and enter game
+    const wasInGameSession = sessionStorage.getItem("chess_in_game") === "true";
+    if (wasInGameSession) {
+        enterGame();
+    } else {
+        showView("landing");
+    }
 })();
 
 document.addEventListener("visibilitychange", () => {
@@ -1967,17 +2255,79 @@ function toggleChat() {
     }
 })();
 
-if (emojiToggle) {
-    emojiToggle.addEventListener("click", () => emojiPicker.classList.toggle("hidden"));
+function positionEmojiPicker() {
+    if (!emojiPicker || !emojiToggle) return;
+    const btnRect = emojiToggle.getBoundingClientRect();
+    const pickerWidth = emojiPicker.offsetWidth || 180;
+    const pickerHeight = emojiPicker.offsetHeight || 135;
+
+    // Default: position directly above the emoji button
+    let left = btnRect.left;
+    let bottom = window.innerHeight - btnRect.top + 8;
+    let top = "auto";
+
+    // Keep within horizontal viewport boundaries
+    if (left + pickerWidth > window.innerWidth - 12) {
+        left = window.innerWidth - pickerWidth - 12;
+    }
+    if (left < 12) {
+        left = 12;
+    }
+
+    // If emoji button is too close to top of viewport, position below button
+    if (btnRect.top < pickerHeight + 20) {
+        bottom = "auto";
+        top = (btnRect.bottom + 8) + "px";
+    } else {
+        bottom = bottom + "px";
+    }
+
+    emojiPicker.style.left = `${left}px`;
+    if (top !== "auto") {
+        emojiPicker.style.top = top;
+        emojiPicker.style.bottom = "auto";
+    } else {
+        emojiPicker.style.bottom = bottom;
+        emojiPicker.style.top = "auto";
+    }
 }
 
-document.querySelectorAll(".emoji").forEach(el => {
-    el.addEventListener("click", (e) => {
-        chatInput.value += e.target.innerText;
-        emojiPicker.classList.add("hidden");
-        chatInput.focus();
+if (emojiToggle && emojiPicker) {
+    emojiToggle.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const isHidden = emojiPicker.classList.contains("hidden");
+        if (isHidden) {
+            emojiPicker.classList.remove("hidden");
+            positionEmojiPicker();
+        } else {
+            emojiPicker.classList.add("hidden");
+        }
     });
-});
+
+    document.querySelectorAll(".emoji").forEach(el => {
+        el.addEventListener("click", (e) => {
+            e.stopPropagation();
+            chatInput.value += e.target.innerText;
+            emojiPicker.classList.add("hidden");
+            chatInput.focus();
+        });
+    });
+
+    // Close emoji picker when clicking anywhere outside
+    document.addEventListener("click", (e) => {
+        if (!emojiPicker.classList.contains("hidden")) {
+            if (!emojiPicker.contains(e.target) && e.target !== emojiToggle) {
+                emojiPicker.classList.add("hidden");
+            }
+        }
+    });
+
+    window.addEventListener("resize", () => {
+        if (!emojiPicker.classList.contains("hidden")) {
+            positionEmojiPicker();
+        }
+    });
+}
 
 function sendChatMessage() {
     const text = chatInput.value.trim();

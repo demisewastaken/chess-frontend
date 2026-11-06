@@ -1194,6 +1194,9 @@ function showGameEndPanel(rawStatus, showPopup = false) {
 }
 
 // Show temporary game-end notification popup
+let gameEndPopupTimeout = null;
+let gameEndPopupFadeTimeout = null;
+
 function showGameEndPopup(title, message) {
     const popup = document.getElementById("game-end-popup");
     const popupBox = popup.querySelector(".game-end-popup-box");
@@ -1205,17 +1208,20 @@ function showGameEndPopup(title, message) {
     titleEl.innerText = title;
     messageEl.innerText = message;
 
+    if (gameEndPopupTimeout) clearTimeout(gameEndPopupTimeout);
+    if (gameEndPopupFadeTimeout) clearTimeout(gameEndPopupFadeTimeout);
+
     // Reset and show
     popupBox.classList.remove("fade-out");
     popup.classList.remove("hidden");
 
-    // Auto-hide after 1.5 seconds
-    setTimeout(() => {
+    // Auto-hide after 2.0 seconds
+    gameEndPopupTimeout = setTimeout(() => {
         popupBox.classList.add("fade-out");
-        setTimeout(() => {
+        gameEndPopupFadeTimeout = setTimeout(() => {
             popup.classList.add("hidden");
         }, 300); // Wait for fade-out animation
-    }, 1500);
+    }, 2000);
 }
 
 // THEME SWITCHER
@@ -1978,8 +1984,13 @@ function navigateBackFromRulebook() {
 
 // Connection lifecycle state
 let isConnectingToGame = false;
-let connectionAbortController = null;
+let currentConnectionAttemptId = 0;
+let activeProbeController = null;
 let connectionStatusTimers = [];
+
+const TOTAL_CONNECTION_TIMEOUT_MS = 110000; // 110s max budget for Render cold-starts
+const SINGLE_PROBE_TIMEOUT_MS = 15000;       // 15s per individual connection probe
+const PROBE_RETRY_DELAY_MS = 2500;          // 2.5s between probe retries
 
 function updateLoadingStatus(text) {
     const statusTextEl = document.getElementById("loading-status-text");
@@ -2031,6 +2042,7 @@ async function enterGame() {
         return;
     }
     isConnectingToGame = true;
+    const attemptId = ++currentConnectionAttemptId;
 
     // Reset board and view state before join confirmation to ensure no stale board is shown
     hasJoinedGame = false;
@@ -2046,40 +2058,93 @@ async function enterGame() {
         loadingScreen.classList.remove("hidden");
     }
 
-    // Progressive status updates reflecting actual backend cold-start milestones
     clearConnectionTimers();
+    // Progressive status updates reflecting actual backend cold-start milestones
     connectionStatusTimers.push(
         setTimeout(() => {
-            updateLoadingStatus("Waking up the game server...");
-        }, 5000)
+            if (attemptId === currentConnectionAttemptId && isConnectingToGame) {
+                updateLoadingStatus("Waking up the game server...");
+            }
+        }, 4000)
     );
     connectionStatusTimers.push(
         setTimeout(() => {
-            updateLoadingStatus("Waking up the game server (Render spin-up)...");
-        }, 15000)
+            if (attemptId === currentConnectionAttemptId && isConnectingToGame) {
+                updateLoadingStatus("Waking up the game server (Render spin-up)...");
+            }
+        }, 12000)
     );
     connectionStatusTimers.push(
         setTimeout(() => {
-            updateLoadingStatus("Almost ready, initializing match environment...");
-        }, 30000)
+            if (attemptId === currentConnectionAttemptId && isConnectingToGame) {
+                updateLoadingStatus("Render container starting, please hold on...");
+            }
+        }, 25000)
+    );
+    connectionStatusTimers.push(
+        setTimeout(() => {
+            if (attemptId === currentConnectionAttemptId && isConnectingToGame) {
+                updateLoadingStatus("Initializing match environment...");
+            }
+        }, 45000)
+    );
+    connectionStatusTimers.push(
+        setTimeout(() => {
+            if (attemptId === currentConnectionAttemptId && isConnectingToGame) {
+                updateLoadingStatus("Finalizing server startup, almost ready...");
+            }
+        }, 70000)
     );
 
-    connectionAbortController = new AbortController();
-    const timeoutId = setTimeout(() => {
-        if (connectionAbortController) {
-            connectionAbortController.abort();
-        }
-    }, 55000);
-
-    const wasInGameSession = sessionStorage.getItem("chess_in_game") === "true";
+    const startTime = Date.now();
+    let joinSuccess = false;
 
     try {
-        const joinSuccess = await joinGame(wasInGameSession, connectionAbortController.signal);
-        clearTimeout(timeoutId);
+        // Polling retry loop: Keep probing the backend until it wakes up or total budget expires
+        while (Date.now() - startTime < TOTAL_CONNECTION_TIMEOUT_MS) {
+            if (attemptId !== currentConnectionAttemptId || !isConnectingToGame) {
+                return;
+            }
+
+            activeProbeController = new AbortController();
+            const probeTimeout = setTimeout(() => {
+                try {
+                    if (activeProbeController) activeProbeController.abort();
+                } catch (e) {}
+            }, SINGLE_PROBE_TIMEOUT_MS);
+
+            try {
+                const wasInGameSession = sessionStorage.getItem("chess_in_game") === "true";
+                joinSuccess = await joinGame(wasInGameSession, activeProbeController.signal);
+                clearTimeout(probeTimeout);
+
+                if (joinSuccess) {
+                    break; // Connected and authenticated successfully!
+                }
+            } catch (probeErr) {
+                clearTimeout(probeTimeout);
+                // Transient cold-start error (AbortError, 502 Bad Gateway, network timeout)
+                console.log("Connection probe pending server wake-up...", probeErr.name || probeErr);
+            } finally {
+                activeProbeController = null;
+            }
+
+            if (attemptId !== currentConnectionAttemptId || !isConnectingToGame) {
+                return;
+            }
+
+            // Wait before next probe attempt to prevent flooding the starting container
+            await new Promise(resolve => setTimeout(resolve, PROBE_RETRY_DELAY_MS));
+        }
+
+        if (attemptId !== currentConnectionAttemptId || !isConnectingToGame) {
+            return;
+        }
+
         clearConnectionTimers();
 
         if (!joinSuccess) {
-            showLoadingErrorState("The server did not respond as expected. Please check your connection or retry.");
+            showLoadingErrorState("The game server is taking longer than expected to wake up. This typically occurs on Render free-tier cold starts. Please retry.");
             isConnectingToGame = false;
             return;
         }
@@ -2104,28 +2169,32 @@ async function enterGame() {
             }, 350);
         }
     } catch (e) {
-        clearTimeout(timeoutId);
         clearConnectionTimers();
-        console.error("Error entering game:", e);
-        if (e.name === "AbortError") {
-            showLoadingErrorState("The game server is taking longer than expected to wake up. Render cold-starts may take up to a minute on the first visit.");
-        } else {
-            showLoadingErrorState("Unable to reach the chess server. Please check your network connection and retry.");
-        }
+        console.error("Error during game connection lifecycle:", e);
+        showLoadingErrorState("Unable to reach the chess server. Please check your network connection and retry.");
     } finally {
-        isConnectingToGame = false;
+        if (attemptId === currentConnectionAttemptId) {
+            isConnectingToGame = false;
+        }
     }
 }
 
 function retryGameConnection() {
+    currentConnectionAttemptId++;
+    if (activeProbeController) {
+        try { activeProbeController.abort(); } catch (e) {}
+        activeProbeController = null;
+    }
+    clearConnectionTimers();
     isConnectingToGame = false;
     enterGame();
 }
 
 function cancelGameConnection() {
-    if (connectionAbortController) {
-        connectionAbortController.abort();
-        connectionAbortController = null;
+    currentConnectionAttemptId++;
+    if (activeProbeController) {
+        try { activeProbeController.abort(); } catch (e) {}
+        activeProbeController = null;
     }
     clearConnectionTimers();
     isConnectingToGame = false;
